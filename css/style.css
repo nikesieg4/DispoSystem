@@ -170,7 +170,8 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 0;
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .row.end { justify-content: flex-end; }
 #vw-import { width: 100%; margin-bottom: 12px; }
-#vw-liste .item { padding-right: 0; }
+#vw-liste .item { flex-wrap: wrap; padding-right: 0; }
+#vw-liste .actions { flex-basis: 100%; display: flex; gap: 6px; padding-left: 36px; }
 #vw-liste .btn-ghost { min-height: 30px; padding: 0 8px; font-size: 12px; }
 .popup-link { cursor: pointer; border-radius: 4px; }
 .popup-link:hover { background: var(--panel-2); }
@@ -178,6 +179,17 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 0;
 .rechte-info { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
 .rechte-info summary { cursor: pointer; color: var(--muted); min-height: 32px; }
 .rechte-info p { margin: 6px 0; }
+
+/* Besatzung */
+.crew-line { margin: 0 0 12px; color: var(--text); }
+.crew-line b { color: var(--muted); font-weight: 600; }
+.item .crew { font-size: 12px; color: #C9BFB6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.field-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.cd-liste { display: grid; gap: 6px; margin-bottom: 8px; }
+.cd-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 150px) 38px; gap: 6px; }
+.cd-row .btn-ghost { padding: 0; }
+.grow { flex: 1; }
+.popup-crew { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 12px; }
 
 /* Status-Dialog */
 .dialog {
@@ -218,5 +230,7 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 0;
   .sidebar { border-right: 0; border-top: 1px solid var(--line); overflow: visible; }
   .topbar { flex-wrap: wrap; padding: 8px 16px; gap: 8px; }
   #user-name { display: none; }
+  .cd-row { grid-template-columns: minmax(0, 1fr) 38px; }
+  .cd-row select { grid-column: 1; }
   .pick-banner { top: auto; bottom: 12px; width: calc(100% - 24px); justify-content: space-between; }
 }

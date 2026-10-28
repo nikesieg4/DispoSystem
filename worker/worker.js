@@ -12,6 +12,8 @@
 //   ALLOWED_ORIGIN   z. B. https://nikesieg4.github.io
 //   ROLLEN_HOEHERER_DIENST  Rollennamen oder -IDs, mit Komma getrennt
 //   ROLLEN_WACHLEITER       Rollennamen oder -IDs, mit Komma getrennt
+//   ROLLEN_FZF              Rollen, die als Fahrzeugführer wählbar sind
+// Für die Besatzungsauswahl muss beim Bot der "Server Members Intent" an sein.
 // Bindung: D1-Datenbank unter dem Namen DB.
 
 let DISCORD = "https://discord.com/api/v10";
@@ -20,6 +22,8 @@ const DIENST_MAX_STUNDEN = 12;
 const STANDARD_HOEHERER_DIENST =
   "Brandreferendar,Brandrat,Brandoberrat,Branddirektor,Abteilungsleiter EB,Abteilungsleiter Einsatzbetrieb,Stv. Kreisbranddirektor,Kreisbranddirektor";
 const STANDARD_WACHLEITER = "Wachleiter";
+const STANDARD_FZF = "Fahrzeugführer";
+const MAX_BESATZUNG = 12;
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS fahrzeuge (
@@ -29,11 +33,14 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS dienst (
      user_id TEXT PRIMARY KEY, name TEXT NOT NULL, seit TEXT NOT NULL)`,
 ];
+// Spalten, die später dazugekommen sind (für bestehende Datenbanken)
+const NEUE_SPALTEN = { fzf: "TEXT", besatzung: "TEXT" };
 
 // Kurzzeit-Caches pro Worker-Instanz, damit nicht jede Anfrage Discord fragt.
 const tokenCache = new Map(); // token -> { user, bis }
 const memberCache = new Map(); // userId -> { member, bis }
 const rollenCache = { bis: 0, rollen: [] };
+const mitgliederCache = { bis: 0, liste: null };
 let schemaBereit = false;
 
 export default {
@@ -45,6 +52,12 @@ export default {
     try {
       if (!schemaBereit) {
         await env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)));
+        const { results } = await env.DB.prepare("PRAGMA table_info(fahrzeuge)").all();
+        for (const [spalte, typ] of Object.entries(NEUE_SPALTEN)) {
+          if (!results.some((c) => c.name === spalte)) {
+            await env.DB.prepare(`ALTER TABLE fahrzeuge ADD COLUMN ${spalte} ${typ}`).run();
+          }
+        }
         schemaBereit = true;
       }
       const res = await route(request, env);
@@ -85,6 +98,42 @@ async function route(request, env) {
       .run();
     if (!r.meta.changes) throw fehler(404, "Fahrzeug nicht gefunden.");
     return json({ ok: true });
+  }
+
+  m = pfad.match(/^\/api\/fahrzeuge\/([A-Za-z0-9_-]{1,40})\/besatzung$/);
+  if (m && methode === "PUT") {
+    darfVerwalten(ich);
+    const b = await request.json();
+    const fzf = person(b.fzf);
+    const besatzung = (Array.isArray(b.besatzung) ? b.besatzung : []).map(person).filter(Boolean);
+    if (besatzung.length > MAX_BESATZUNG) throw fehler(400, `Höchstens ${MAX_BESATZUNG} Personen Besatzung.`);
+    for (const p of besatzung) p.funktion = text(p.funktion, 30);
+
+    // Wer neu eingeteilt wird, wird aus anderen Fahrzeugen ausgetragen.
+    const ids = [fzf, ...besatzung].filter((p) => p && p.userId).map((p) => p.userId);
+    const { results } = await env.DB.prepare("SELECT id, fzf, besatzung FROM fahrzeuge WHERE id != ?").bind(m[1]).all();
+    const updates = [];
+    for (const f of results) {
+      const altFzf = parse(f.fzf);
+      const altBes = parse(f.besatzung) || [];
+      const neuFzf = altFzf && ids.includes(altFzf.userId) ? null : altFzf;
+      const neuBes = altBes.filter((p) => !ids.includes(p.userId));
+      if (neuFzf !== altFzf || neuBes.length !== altBes.length) {
+        updates.push(env.DB.prepare("UPDATE fahrzeuge SET fzf = ?, besatzung = ? WHERE id = ?")
+          .bind(neuFzf ? JSON.stringify(neuFzf) : null, JSON.stringify(neuBes), f.id));
+      }
+    }
+    updates.push(env.DB.prepare(
+      "UPDATE fahrzeuge SET fzf = ?, besatzung = ?, geaendert_von = ?, geaendert_am = ? WHERE id = ?"
+    ).bind(fzf ? JSON.stringify(fzf) : null, JSON.stringify(besatzung), ich.name, jetzt(), m[1]));
+    const r = await env.DB.batch(updates);
+    if (!r[r.length - 1].meta.changes) throw fehler(404, "Fahrzeug nicht gefunden.");
+    return json({ ok: true });
+  }
+
+  if (pfad === "/api/mitglieder" && methode === "GET") {
+    darfVerwalten(ich);
+    return json({ mitglieder: await mitglieder(env) });
   }
 
   m = pfad.match(/^\/api\/fahrzeuge\/([A-Za-z0-9_-]{1,40})$/);
@@ -216,6 +265,43 @@ function normalisieren(name) {
   return (geklammert ? geklammert[1] : n.replace(/^\[[^\]]*\]\s*/, "")).trim();
 }
 
+// Alle Servermitglieder für die Besatzungsauswahl (braucht den Members Intent).
+async function mitglieder(env) {
+  if (mitgliederCache.bis > Date.now()) return mitgliederCache.liste;
+  const alleRollen = await serverRollen(env);
+  const fzfZiele = (env.ROLLEN_FZF || STANDARD_FZF).split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const fzfRollen = alleRollen
+    .filter((r) => fzfZiele.includes(r.id) || fzfZiele.includes(normalisieren(r.name).toLowerCase()))
+    .map((r) => r.id);
+
+  const liste = [];
+  let after = "0";
+  for (let seite = 0; seite < 10; seite++) {
+    const r = await fetch(`${DISCORD}/guilds/${env.GUILD_ID}/members?limit=1000&after=${after}`, {
+      headers: { Authorization: "Bot " + env.BOT_TOKEN },
+    });
+    if (r.status === 403) {
+      throw fehler(502, "Mitgliederliste gesperrt – im Discord Developer Portal beim Bot den \"Server Members Intent\" einschalten.");
+    }
+    if (!r.ok) throw fehler(502, "Mitgliederliste konnte nicht geladen werden.");
+    const teil = await r.json();
+    for (const mb of teil) {
+      if (mb.user.bot) continue;
+      liste.push({
+        userId: mb.user.id,
+        name: mb.nick || mb.user.global_name || mb.user.username,
+        fzf: mb.roles.some((id) => fzfRollen.includes(id)),
+      });
+    }
+    if (teil.length < 1000) break;
+    after = teil[teil.length - 1].user.id;
+  }
+  liste.sort((a, b) => a.name.localeCompare(b.name, "de"));
+  mitgliederCache.liste = liste;
+  mitgliederCache.bis = Date.now() + 2 * 60 * 1000;
+  return liste;
+}
+
 async function dienstListe(env) {
   const grenze = new Date(Date.now() - DIENST_MAX_STUNDEN * 3600 * 1000).toISOString();
   await env.DB.prepare("DELETE FROM dienst WHERE seit < ?").bind(grenze).run();
@@ -231,7 +317,26 @@ function ausDb(f) {
     einsatz: f.einsatz || undefined,
     position: f.lat == null ? undefined : [f.lat, f.lng],
     geaendertVon: f.geaendert_von, geaendertAm: f.geaendert_am,
+    fzf: parse(f.fzf) || undefined,
+    besatzung: parse(f.besatzung) || [],
   };
+}
+
+function parse(s) {
+  try {
+    return s ? JSON.parse(s) : null;
+  } catch {
+    return null;
+  }
+}
+
+// { userId?, name, funktion? } – userId nur, wenn die Person aus der Liste gewählt wurde.
+function person(p) {
+  if (!p || typeof p !== "object") return null;
+  const name = text(p.name, 40);
+  if (!name) return null;
+  const userId = /^\d{5,25}$/.test(String(p.userId || "")) ? String(p.userId) : undefined;
+  return { userId, name, funktion: p.funktion };
 }
 
 function position(p) {

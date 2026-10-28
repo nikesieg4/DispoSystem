@@ -114,6 +114,7 @@
       <h2 id="sd-title"></h2>
       <p id="sd-sub" class="muted"></p>
       <div id="sd-status" class="sd-grid" role="group" aria-label="FMS-Status"></div>
+      <p id="sd-crew" class="small crew-line" hidden></p>
       <label class="field">Einsatz / Bemerkung
         <input id="sd-einsatz" maxlength="120" placeholder="z. B. Brand Gebäude – Downtown Park">
       </label>
@@ -128,6 +129,34 @@
         <button id="sd-save" type="submit" class="btn-primary">Speichern</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Besatzung zuteilen -->
+  <dialog id="crew-dialog" class="dialog" aria-labelledby="cd-title">
+    <form method="dialog" class="form">
+      <div>
+        <h2 id="cd-title"></h2>
+        <p id="cd-sub" class="muted">Besatzung zuteilen</p>
+      </div>
+      <p id="cd-hinweis" class="muted small" hidden></p>
+      <label class="field">Fahrzeugführer (FzF)
+        <input id="cd-fzf" list="cd-fzf-optionen" maxlength="40" placeholder="Name eingeben oder auswählen" autocomplete="off">
+      </label>
+      <div>
+        <div class="field-label">Besatzung</div>
+        <div id="cd-liste" class="cd-liste"></div>
+        <button id="cd-add" type="button" class="btn-ghost">+ Person hinzufügen</button>
+      </div>
+      <p id="cd-error" class="error" role="alert" hidden></p>
+      <div class="row end">
+        <button id="cd-leeren" type="button" class="btn-ghost btn-danger">Besatzung leeren</button>
+        <span class="grow"></span>
+        <button id="cd-cancel" type="button" class="btn-ghost">Abbrechen</button>
+        <button id="cd-save" type="submit" class="btn-primary">Speichern</button>
+      </div>
+    </form>
+    <datalist id="cd-fzf-optionen"></datalist>
+    <datalist id="cd-optionen"></datalist>
   </dialog>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>

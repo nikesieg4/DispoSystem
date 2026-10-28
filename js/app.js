@@ -9,6 +9,27 @@
   const fmsColor = (s) => (FMS[s] || { farbe: "#7C838D" }).farbe;
   const fmsText = (s) => (FMS[s] || { text: "Unbekannt" }).text;
 
+  const FUNKTIONEN = [
+    "Maschinist", "Angriffstruppführer", "Angriffstruppmann", "Wassertruppführer", "Wassertruppmann",
+    "Schlauchtruppführer", "Schlauchtruppmann", "Melder", "Rettungssanitäter", "Notfallsanitäter",
+    "Notarzt", "Praktikant",
+  ];
+
+  // "FzF: Müller · 3 Besatzung"
+  function crewKurz(f) {
+    const n = (f.besatzung || []).length;
+    const teile = [];
+    if (f.fzf) teile.push("FzF: " + f.fzf.name);
+    if (n) teile.push(n + (f.fzf ? " Besatzung" : n === 1 ? " Person" : " Personen"));
+    return teile.join(" · ");
+  }
+
+  function crewHtml(f) {
+    if (!f.fzf && !(f.besatzung || []).length) return "";
+    const rows = (f.besatzung || []).map((p) => `<div>${esc(p.name)}${p.funktion ? ` <span class="muted">· ${esc(p.funktion)}</span>` : ""}</div>`).join("");
+    return `<div class="popup-crew">${f.fzf ? `<div><b>FzF:</b> ${esc(f.fzf.name)}</div>` : ""}${rows}</div>`;
+  }
+
   async function loadJson(path) {
     const r = await fetch(path + "?t=" + Date.now(), { cache: "no-store" });
     if (!r.ok) throw new Error(path + " konnte nicht geladen werden");
@@ -139,7 +160,7 @@
     const list = atStation(w.id);
     const edit = (f) => (mitApi() ? ` data-status-edit="${esc(f.id)}" class="popup-row popup-link"` : ' class="popup-row"');
     const rows = list.length
-      ? '<div class="popup-row muted">Auf der Wache:</div>' + list.map((f) => `<div${edit(f)}><span class="fms" style="background:${fmsColor(f.status)};width:20px;height:20px;font-size:11px">${esc(f.status)}</span> ${esc(f.rufname)} · ${esc(f.typ)}</div>`).join("")
+      ? '<div class="popup-row muted">Auf der Wache:</div>' + list.map((f) => `<div${edit(f)}><span class="fms" style="background:${fmsColor(f.status)};width:20px;height:20px;font-size:11px">${esc(f.status)}</span> ${esc(f.rufname)} · ${esc(f.typ)}${crewKurz(f) ? `<div class="muted small">${esc(crewKurz(f))}</div>` : ""}</div>`).join("")
       : '<div class="popup-row muted">Keine Fahrzeuge auf der Wache</div>';
     return `<div class="popup-title">${esc(w.name)}</div>${w.typ === "wache" ? rows : ""}`;
   }
@@ -195,6 +216,7 @@
          <div class="popup-row">${esc(f.typ)} · ${esc(wachen[f.wache] ? wachen[f.wache].name : f.wache)}</div>
          <div class="popup-row"><span class="fms" style="background:${color};width:20px;height:20px;font-size:11px">${esc(f.status)}</span> ${esc(fmsText(f.status))}</div>
          ${f.einsatz ? `<div class="popup-row muted">${esc(f.einsatz)}</div>` : ""}
+         ${crewHtml(f)}
          ${mitApi() ? `<button type="button" class="btn-ghost copy" data-status-edit="${esc(f.id)}">Status ändern</button>` : ""}`
       );
       m.addTo(vehicleLayer);
@@ -268,7 +290,7 @@
       stationGroups(visible, (f) =>
         `<button type="button" class="item" data-veh="${esc(f.id)}">
           <span class="fms" style="background:${fmsColor(f.status)}">${esc(f.status)}</span>
-          <span class="grow"><div class="title">${esc(f.rufname)}</div><div class="sub">${esc(f.typ)} · ${esc(f.einsatz || fmsText(f.status))}</div></span>
+          <span class="grow"><div class="title">${esc(f.rufname)}</div><div class="sub">${esc(f.typ)} · ${esc(f.einsatz || fmsText(f.status))}</div>${crewKurz(f) ? `<div class="crew">${esc(crewKurz(f))}</div>` : ""}</span>
         </button>`
       ) || '<p class="muted">Keine Fahrzeuge mit diesem Status.</p>';
   }
@@ -389,6 +411,9 @@
     $("#sd-title").textContent = f.rufname;
     $("#sd-sub").textContent = `${f.typ} · ${wachen[f.wache] ? wachen[f.wache].name : f.wache}`;
     $("#sd-einsatz").value = dialogAuswahl.einsatz;
+    const crew = [f.fzf ? "FzF " + f.fzf.name : "", ...(f.besatzung || []).map((p) => p.name)].filter(Boolean);
+    $("#sd-crew").hidden = !crew.length;
+    $("#sd-crew").innerHTML = `<b>Besatzung:</b> ${esc(crew.join(", "))}`;
     $("#sd-error").hidden = true;
     renderStatusDialog();
     $("#status-dialog").showModal();
@@ -470,6 +495,8 @@
     $("#vw-reset").addEventListener("click", formLeeren);
 
     $("#vw-liste").addEventListener("click", async (e) => {
+      const crew = e.target.closest("[data-crew]");
+      if (crew) openCrewDialog(fahrzeuge.find((x) => x.id === crew.dataset.crew));
       const edit = e.target.closest("[data-edit]");
       const del = e.target.closest("[data-del]");
       if (edit) {
@@ -510,6 +537,7 @@
       }
     });
 
+    initCrewDialog();
     renderVerwaltung();
   }
 
@@ -539,9 +567,12 @@
       stationGroups(fahrzeuge, (f) =>
         `<div class="item">
           <span class="fms" style="background:${fmsColor(f.status)}">${esc(f.status)}</span>
-          <span class="grow"><div class="title">${esc(f.rufname)}</div><div class="sub">${esc(f.typ)}${f.geaendertVon ? " · zuletzt " + esc(f.geaendertVon) : ""}</div></span>
-          <button type="button" class="btn-ghost" data-edit="${esc(f.id)}" aria-label="${esc(f.rufname)} bearbeiten">Bearbeiten</button>
-          <button type="button" class="btn-ghost btn-danger" data-del="${esc(f.id)}" aria-label="${esc(f.rufname)} löschen">Löschen</button>
+          <span class="grow"><div class="title">${esc(f.rufname)}</div><div class="sub">${esc(f.typ)}${f.geaendertVon ? " · zuletzt " + esc(f.geaendertVon) : ""}</div>${crewKurz(f) ? `<div class="crew">${esc(crewKurz(f))}</div>` : ""}</span>
+          <span class="actions">
+            <button type="button" class="btn-ghost" data-crew="${esc(f.id)}" aria-label="Besatzung von ${esc(f.rufname)}">Besatzung</button>
+            <button type="button" class="btn-ghost" data-edit="${esc(f.id)}" aria-label="${esc(f.rufname)} bearbeiten">Bearbeiten</button>
+            <button type="button" class="btn-ghost btn-danger" data-del="${esc(f.id)}" aria-label="${esc(f.rufname)} löschen">Löschen</button>
+          </span>
         </div>`
       ) || '<p class="muted">Noch keine Fahrzeuge eingetragen.</p>';
   }
@@ -551,6 +582,117 @@
     $("#vw-id").value = "";
     $("#vw-submit").textContent = "Fahrzeug eintragen";
     $("#vw-reset").hidden = true;
+  }
+
+  // ---------- Besatzung zuteilen ----------
+
+  let crewFahrzeug = null;
+  let mitgliederListe = null; // [{ userId, name, fzf }] – null = noch nicht geladen
+
+  function initCrewDialog() {
+    $("#cd-add").addEventListener("click", () => crewZeile());
+    $("#cd-leeren").addEventListener("click", () => {
+      $("#cd-fzf").value = "";
+      $("#cd-liste").innerHTML = "";
+    });
+    $("#cd-cancel").addEventListener("click", () => $("#crew-dialog").close());
+    $("#cd-liste").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-entfernen]");
+      if (b) b.closest(".cd-row").remove();
+    });
+    $("#crew-dialog").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fzf = personAus($("#cd-fzf"));
+      const besatzung = [...document.querySelectorAll("#cd-liste .cd-row")]
+        .map((row) => {
+          const p = personAus(row.querySelector("input"));
+          return p && { ...p, funktion: row.querySelector("select").value || undefined };
+        })
+        .filter(Boolean);
+      const namen = [fzf, ...besatzung].filter(Boolean).map((p) => p.userId || p.name.toLowerCase());
+      if (new Set(namen).size !== namen.length) {
+        return zeigeFehler("#cd-error", new Error("Eine Person ist doppelt eingetragen."));
+      }
+      $("#cd-save").disabled = true;
+      try {
+        await DispoAuth.api(`/api/fahrzeuge/${encodeURIComponent(crewFahrzeug.id)}/besatzung`, {
+          method: "PUT",
+          body: { fzf, besatzung },
+        });
+        $("#crew-dialog").close();
+        await refresh();
+      } catch (err) {
+        zeigeFehler("#cd-error", err);
+      } finally {
+        $("#cd-save").disabled = false;
+      }
+    });
+  }
+
+  async function openCrewDialog(f) {
+    if (!f) return;
+    crewFahrzeug = f;
+    $("#cd-title").textContent = f.rufname;
+    $("#cd-sub").textContent = `${f.typ} · Besatzung zuteilen`;
+    $("#cd-error").hidden = true;
+    merke($("#cd-fzf"), f.fzf);
+    $("#cd-liste").innerHTML = "";
+    (f.besatzung || []).forEach((p) => crewZeile(p));
+    $("#crew-dialog").showModal();
+
+    try {
+      if (!mitgliederListe) mitgliederListe = (await DispoAuth.api("/api/mitglieder")).mitglieder;
+      $("#cd-hinweis").hidden = true;
+    } catch (err) {
+      mitgliederListe = [];
+      $("#cd-hinweis").textContent = err.message + " Namen können trotzdem frei eingetippt werden.";
+      $("#cd-hinweis").hidden = false;
+    }
+    fuelleOptionen();
+  }
+
+  // Vorschläge: wer schon auf einem anderen Fahrzeug sitzt, wird dazugeschrieben.
+  function fuelleOptionen() {
+    const sitztAuf = {};
+    fahrzeuge.forEach((f) => {
+      if (f.id === crewFahrzeug.id) return;
+      [f.fzf, ...(f.besatzung || [])].forEach((p) => p && p.userId && (sitztAuf[p.userId] = f.rufname));
+    });
+    const option = (m) =>
+      `<option value="${esc(m.name)}">${sitztAuf[m.userId] ? "sitzt auf " + esc(sitztAuf[m.userId]) : ""}</option>`;
+    const fzfKandidaten = mitgliederListe.filter((m) => m.fzf);
+    $("#cd-fzf-optionen").innerHTML = (fzfKandidaten.length ? fzfKandidaten : mitgliederListe).map(option).join("");
+    $("#cd-optionen").innerHTML = mitgliederListe.map(option).join("");
+  }
+
+  function crewZeile(p = {}) {
+    const row = document.createElement("div");
+    row.className = "cd-row";
+    row.innerHTML = `
+      <input list="cd-optionen" maxlength="40" placeholder="Name" aria-label="Name" autocomplete="off" value="${esc(p.name || "")}">
+      <select aria-label="Funktion"><option value="">Funktion …</option>${FUNKTIONEN.map((fn) => `<option${fn === p.funktion ? " selected" : ""}>${esc(fn)}</option>`).join("")}</select>
+      <button type="button" class="btn-ghost" data-entfernen aria-label="Person entfernen">✕</button>`;
+    $("#cd-liste").appendChild(row);
+    merke(row.querySelector("input"), p);
+    if (!p.name) row.querySelector("input").focus();
+  }
+
+  // Merkt sich die bisherige Person am Eingabefeld, damit ihre Discord-ID
+  // erhalten bleibt, auch wenn die Mitgliederliste nicht geladen werden kann.
+  function merke(input, p) {
+    input.value = p && p.name ? p.name : "";
+    input.dataset.name = input.value;
+    input.dataset.userId = (p && p.userId) || "";
+  }
+
+  // Eingabefeld → Person; bekannte Mitglieder werden mit Discord-ID gespeichert.
+  function personAus(input) {
+    const name = input.value.trim();
+    if (!name) return null;
+    const m = (mitgliederListe || []).find((x) => x.name === name);
+    if (m) return { userId: m.userId, name: m.name };
+    if (name === input.dataset.name && input.dataset.userId) return { userId: input.dataset.userId, name };
+    return { name };
   }
 
   function slug(s) {

@@ -14,6 +14,14 @@ Mit der **Dispo-API** (Cloudflare Worker, siehe unten) kommt dazu:
 | Wachleiter **im Dienst** | Fahrzeuge eintragen, bearbeiten, löschen |
 | Höherer Dienst | Fahrzeuge eintragen, bearbeiten, löschen (immer) |
 
+Wachleiter im Dienst und der Höhere Dienst teilen außerdem jedem Fahrzeug
+einen **Fahrzeugführer (FzF)** und die **Besatzung** mit Funktion zu
+(Verwaltung → *Besatzung*). Vorgeschlagen werden die Mitglieder des
+Discord-Servers, als FzF alle mit der Rolle *Fahrzeugführer*. Wer neu
+eingeteilt wird, wird automatisch von seinem bisherigen Fahrzeug
+ausgetragen. Die Besatzung sehen alle in der Fahrzeugliste, auf der Karte
+und im Status-Fenster.
+
 Die Rollen liest der Discord-Bot auf dem Server aus – sie lassen sich im
 Browser nicht fälschen. Eine Dienstmeldung läuft nach 12 Stunden ab.
 
@@ -54,6 +62,9 @@ Kostenlos über Cloudflare, alles im Browser:
    kopieren. Den Bot mit diesem Link auf den Server einladen (keine extra
    Rechte nötig, er liest nur Rollen):
    `https://discord.com/oauth2/authorize?client_id=1564641901481566248&scope=bot&permissions=0`
+   Für die Namensvorschläge bei der Besatzung unter **Bot → Privileged
+   Gateway Intents** den **Server Members Intent** einschalten. Ohne ihn
+   können Namen nur frei eingetippt werden.
 2. **Konto:** https://dash.cloudflare.com → kostenlos registrieren.
 3. **Datenbank:** *Storage & Databases → D1 → Create* → Name `dispo`.
    Die Tabellen legt der Worker beim ersten Aufruf selbst an.
@@ -71,6 +82,7 @@ Kostenlos über Cloudflare, alles im Browser:
    | `ALLOWED_ORIGIN` | Text | `https://nikesieg4.github.io` |
    | `ROLLEN_HOEHERER_DIENST` | Text (optional) | Standard: `Brandreferendar,Brandrat,Brandoberrat,Branddirektor,Abteilungsleiter Einsatzbetrieb,Stv. Kreisbranddirektor,Kreisbranddirektor` |
    | `ROLLEN_WACHLEITER` | Text (optional) | Standard: `Wachleiter` |
+   | `ROLLEN_FZF` | Text (optional) | Standard: `Fahrzeugführer` |
 
    Rollen können per Name (Abkürzungen wie `BD » [Branddirektor]` oder `[BD] Branddirektor` werden ignoriert) oder per
    Rollen-ID angegeben werden, mehrere mit Komma getrennt.
