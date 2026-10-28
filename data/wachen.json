@@ -1,0 +1,6 @@
+[
+  {"id": "FW1", "typ": "wache", "name": "Feuerwache 1 – River City", "position": [-170.206, 59.783], "farbe": "#E5484D"},
+  {"id": "FW2", "typ": "wache", "name": "Feuerwache 2 – Springfield", "position": [-65.225, 193.171], "farbe": "#F5A524"},
+  {"id": "FW3", "typ": "wache", "name": "Feuerwache 3 – Fairview", "position": [-33.956, 66.418], "farbe": "#3E9BF0"},
+  {"id": "KH", "typ": "krankenhaus", "name": "River City Hospital", "position": [-158.946, 129.145], "farbe": "#F2F2F2"}
+]

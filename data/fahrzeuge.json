@@ -1,0 +1,15 @@
+{
+  "stand": "2026-10-28T16:00:00+01:00",
+  "fahrzeuge": [
+    {"id": "1-11-1", "rufname": "Florian NRW 1/11-1", "typ": "ELW 1", "wache": "FW1", "status": 2},
+    {"id": "1-46-1", "rufname": "Florian NRW 1/46-1", "typ": "HLF 20", "wache": "FW1", "status": 4, "position": [-178.0, 88.5], "einsatz": "Brand Gebäude – Downtown Park"},
+    {"id": "1-33-1", "rufname": "Florian NRW 1/33-1", "typ": "DLK 23/12", "wache": "FW1", "status": 3, "position": [-174.0, 74.0], "einsatz": "Brand Gebäude – Downtown Park"},
+    {"id": "1-83-1", "rufname": "Florian NRW 1/83-1", "typ": "RTW", "wache": "FW1", "status": 7, "position": [-163.0, 112.0], "einsatz": "Patiententransport ins River City Hospital"},
+    {"id": "1-82-1", "rufname": "Florian NRW 1/82-1", "typ": "NEF", "wache": "FW1", "status": 1},
+    {"id": "2-46-1", "rufname": "Florian NRW 2/46-1", "typ": "HLF 20", "wache": "FW2", "status": 2},
+    {"id": "2-24-1", "rufname": "Florian NRW 2/24-1", "typ": "TLF 4000", "wache": "FW2", "status": 6},
+    {"id": "2-83-1", "rufname": "Florian NRW 2/83-1", "typ": "RTW", "wache": "FW2", "status": 2},
+    {"id": "3-46-1", "rufname": "Florian NRW 3/46-1", "typ": "HLF 20", "wache": "FW3", "status": 2},
+    {"id": "3-83-1", "rufname": "Florian NRW 3/83-1", "typ": "RTW", "wache": "FW3", "status": 5}
+  ]
+}
