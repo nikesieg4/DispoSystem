@@ -2,14 +2,16 @@
 Hält den Bot "Zentraler Service IT" dauerhaft online.
 
 Der Bot zeigt als Status "Schaut auf die Dispo-Karte" an. Damit er online
-bleibt, muss dieses Programm durchgehend laufen (PC, Server oder Bot-Hoster).
+bleibt, muss dieses Programm durchgehend laufen.
 
-Start:
+Raspberry Pi / Linux als Dauerdienst einrichten:
+  bash install.sh
+
+Von Hand starten:
   pip install -r requirements.txt
-  DISCORD_TOKEN=dein_token python bot.py          (Mac/Linux)
-  $env:DISCORD_TOKEN="dein_token"; python bot.py   (Windows PowerShell)
+  DISCORD_TOKEN=dein_token python bot.py
 
-Alternativ den Token in eine Datei ".env" neben bot.py schreiben:
+Der Token kann auch in einer Datei ".env" neben bot.py stehen:
   DISCORD_TOKEN=dein_token
 """
 import os

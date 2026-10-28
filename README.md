@@ -109,6 +109,23 @@ python bot.py
 Auf einem Linux-Server startet `bot/dispo-bot.service` den Bot automatisch
 und nach Abstürzen neu (Anleitung in der Datei).
 
+### 5. Bot dauerhaft online (Raspberry Pi)
+
+Der Worker braucht den Bot nur zum Lesen der Rollen – dafür muss er nicht
+online sein. Damit er trotzdem als **online** mit dem Status *„Schaut auf die
+Dispo-Karte“* erscheint, läuft `bot/bot.py` dauerhaft, z. B. auf einem
+Raspberry Pi:
+
+```bash
+git clone https://github.com/nikesieg4/DispoSystem.git
+cd DispoSystem/bot
+bash install.sh        # fragt einmal nach dem Bot-Token
+```
+
+Der Bot startet danach automatisch beim Hochfahren und nach Abstürzen neu.
+Logs: `journalctl -u dispo-bot -f` · Neustart: `sudo systemctl restart dispo-bot`
+· Update: `git pull && sudo systemctl restart dispo-bot`
+
 ## Daten pflegen
 
 Mit API werden Fahrzeuge im Tab **Verwaltung** eingetragen und Status per
@@ -173,6 +190,8 @@ js/app.js         Karte, Fahrzeuge, Bereiche, Status-Dialog, Verwaltung
 data/*.json       Wachen, Bereiche, (ohne API:) Fahrzeuge
 worker/worker.js  Dispo-API für Cloudflare Workers (Rollenprüfung per Bot, D1)
 worker/wrangler.toml  nur für Einrichtung per Kommandozeile
+bot/bot.py        hält den Bot dauerhaft online
+bot/install.sh    richtet den Bot als Dienst auf dem Raspberry Pi ein
 bot/bot.py        hält den Bot dauerhaft online (optional)
 ```
 
