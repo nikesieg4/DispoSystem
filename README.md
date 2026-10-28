@@ -93,6 +93,22 @@ Danach erscheint für Wachleiter und den Höheren Dienst der Tab
 **Verwaltung**. Beim ersten Mal können dort die Beispielfahrzeuge aus
 `data/fahrzeuge.json` übernommen werden.
 
+### 5. Bot dauerhaft online (optional)
+
+Der Worker braucht den Bot nur zum Lesen der Rollen – dafür muss er nicht
+online sein. Soll er trotzdem als **online** mit dem Status *„Schaut auf die
+Dispo-Karte“* erscheinen, muss `bot/bot.py` durchgehend laufen:
+
+```bash
+cd bot
+pip install -r requirements.txt
+echo 'DISCORD_TOKEN=dein_token' > .env    # .env wird nicht committet
+python bot.py
+```
+
+Auf einem Linux-Server startet `bot/dispo-bot.service` den Bot automatisch
+und nach Abstürzen neu (Anleitung in der Datei).
+
 ## Daten pflegen
 
 Mit API werden Fahrzeuge im Tab **Verwaltung** eingetragen und Status per
@@ -157,6 +173,7 @@ js/app.js         Karte, Fahrzeuge, Bereiche, Status-Dialog, Verwaltung
 data/*.json       Wachen, Bereiche, (ohne API:) Fahrzeuge
 worker/worker.js  Dispo-API für Cloudflare Workers (Rollenprüfung per Bot, D1)
 worker/wrangler.toml  nur für Einrichtung per Kommandozeile
+bot/bot.py        hält den Bot dauerhaft online (optional)
 ```
 
 Karte: Leaflet 1.9.4 · Kartenkacheln und Bereichsnamen: erlc.one
