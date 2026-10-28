@@ -1,0 +1,18 @@
+# Nur nötig, wenn der Worker per Kommandozeile (npx wrangler deploy) statt
+# über das Cloudflare-Dashboard eingerichtet wird.
+name = "dispo-api"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+GUILD_ID = "1506205676136038491"
+ALLOWED_ORIGIN = "https://nikesieg4.github.io"
+# ROLLEN_HOEHERER_DIENST = "Brandreferendar,Brandrat,Brandoberrat,Branddirektor,Abteilungsleiter EB,Stv. Kreisbranddirektor,Kreisbranddirektor"
+# ROLLEN_WACHLEITER = "Wachleiter"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dispo"
+database_id = "HIER_DIE_D1_ID_EINTRAGEN"
+
+# BOT_TOKEN als Secret setzen:  npx wrangler secret put BOT_TOKEN

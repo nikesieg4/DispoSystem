@@ -8,12 +8,17 @@ window.DISPO_CONFIG = {
   // Leer lassen ("") = jeder mit Discord-Account.
   guildId: "1506205676136038491",
 
-  // Optional: nur Mitglieder mit mindestens einer dieser Rollen-IDs.
+  // Adresse der Dispo-API (Cloudflare Worker, siehe README). Leer = nur
+  // Anzeige aus data/fahrzeuge.json, ohne Status ändern und Verwaltung.
+  // Mit API prüft der Bot im Worker Mitgliedschaft und Rollen.
+  apiUrl: "",
+
+  // Nur ohne API: zusätzlich nur Mitglieder mit einer dieser Rollen-IDs.
   // Beispiel: ["123456789012345678"]. Leer = Servermitgliedschaft reicht.
   requiredRoleIds: [],
 
   // Wie oft die Fahrzeugstatus neu geladen werden (Sekunden).
-  refreshSeconds: 30,
+  refreshSeconds: 15,
 
   // Kartenkacheln von erlc.one (ER:LC Liberty County)
   tileUrl: "https://erlc-maps.pages.dev/map/{z}/{x}/{y}.png",

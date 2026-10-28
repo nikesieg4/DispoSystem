@@ -5,6 +5,18 @@ Liberty County (ER:LC) mit den Feuerwachen, den FMS-Status aller Fahrzeuge
 und den Bereichen (Wachbezirken). Kartenkacheln und Bereichsnamen stammen
 von [erlc.one](https://erlc.one).
 
+Mit der **Dispo-API** (Cloudflare Worker, siehe unten) kommt dazu:
+
+| Wer | Darf |
+|---|---|
+| Mitglied des Fraktionsservers | Karte sehen, Fahrzeugstatus ändern (Status, Einsatztext, Position) |
+| Wachleiter | sich in den Dienst melden |
+| Wachleiter **im Dienst** | Fahrzeuge eintragen, bearbeiten, löschen |
+| Höherer Dienst | Fahrzeuge eintragen, bearbeiten, löschen (immer) |
+
+Die Rollen liest der Discord-Bot auf dem Server aus – sie lassen sich im
+Browser nicht fälschen. Eine Dienstmeldung läuft nach 12 Stunden ab.
+
 ## Einrichtung
 
 ### 1. Discord-Anwendung
@@ -34,11 +46,49 @@ Ordner `/ (root)` → Save. Nach ca. einer Minute ist die Seite unter
 > **angezeigt** bekommt – die JSON-Dateien im Repo sind trotzdem öffentlich
 > abrufbar, solange das Repo öffentlich ist. Keine geheimen Daten eintragen.
 
+### 4. Dispo-API einrichten (Status ändern & Verwaltung)
+
+Kostenlos über Cloudflare, alles im Browser:
+
+1. **Bot vorbereiten:** Discord-Anwendung → **Bot** → *Reset Token* → Token
+   kopieren. Den Bot mit diesem Link auf den Server einladen (keine extra
+   Rechte nötig, er liest nur Rollen):
+   `https://discord.com/oauth2/authorize?client_id=1564641901481566248&scope=bot&permissions=0`
+2. **Konto:** https://dash.cloudflare.com → kostenlos registrieren.
+3. **Datenbank:** *Storage & Databases → D1 → Create* → Name `dispo`.
+   Die Tabellen legt der Worker beim ersten Aufruf selbst an.
+4. **Worker:** *Compute (Workers) → Create → Start with Hello World* →
+   Name `dispo-api` → *Deploy* → *Edit code* → den kompletten Inhalt von
+   `worker/worker.js` hineinkopieren → *Deploy*.
+5. **Datenbank verbinden:** Worker → *Bindings → Add binding → D1 database*
+   → Variablenname `DB`, Datenbank `dispo`.
+6. **Einstellungen:** Worker → *Settings → Variables and Secrets*:
+
+   | Name | Typ | Wert |
+   |---|---|---|
+   | `BOT_TOKEN` | **Secret** | Bot-Token aus Schritt 1 |
+   | `GUILD_ID` | Text | `1506205676136038491` |
+   | `ALLOWED_ORIGIN` | Text | `https://nikesieg4.github.io` |
+   | `ROLLEN_HOEHERER_DIENST` | Text (optional) | Standard: `Brandreferendar,Brandrat,Brandoberrat,Branddirektor,Abteilungsleiter EB,Stv. Kreisbranddirektor,Kreisbranddirektor` |
+   | `ROLLEN_WACHLEITER` | Text (optional) | Standard: `Wachleiter` |
+
+   Rollen können per Name (Präfixe wie `[BD] ` werden ignoriert) oder per
+   Rollen-ID angegeben werden, mehrere mit Komma getrennt.
+7. Die Worker-Adresse (z. B. `https://dispo-api.DEINNAME.workers.dev`) in
+   `js/config.js` bei `apiUrl` eintragen und committen.
+
+Danach erscheint für Wachleiter und den Höheren Dienst der Tab
+**Verwaltung**. Beim ersten Mal können dort die Beispielfahrzeuge aus
+`data/fahrzeuge.json` übernommen werden.
+
 ## Daten pflegen
+
+Mit API werden Fahrzeuge im Tab **Verwaltung** eingetragen und Status per
+Klick auf ein Fahrzeug geändert. Ohne API gilt das Folgende:
 
 Alles liegt als JSON im Ordner `data/` und kann direkt auf GitHub bearbeitet
 werden (Datei öffnen → Stift-Symbol → Commit). Die Seite lädt die Fahrzeuge
-alle 30 Sekunden neu.
+alle 15 Sekunden neu.
 
 ### `data/fahrzeuge.json`
 
@@ -90,9 +140,11 @@ als Redirect in der Discord-Anwendung eintragen.
 index.html        Seite (Login + Karte)
 css/style.css     Aussehen
 js/config.js      Einstellungen (Client ID, Server, Rollen, FMS-Farben)
-js/auth.js        Discord-Login (OAuth2 Implicit Grant, nur im Browser)
-js/app.js         Karte, Fahrzeuge, Bereiche
-data/*.json       Wachen, Bereiche, Fahrzeuge
+js/auth.js        Discord-Login (OAuth2 Implicit Grant) + Aufrufe der API
+js/app.js         Karte, Fahrzeuge, Bereiche, Status-Dialog, Verwaltung
+data/*.json       Wachen, Bereiche, (ohne API:) Fahrzeuge
+worker/worker.js  Dispo-API für Cloudflare Workers (Rollenprüfung per Bot, D1)
+worker/wrangler.toml  nur für Einrichtung per Kommandozeile
 ```
 
 Karte: Leaflet 1.9.4 · Kartenkacheln und Bereichsnamen: erlc.one

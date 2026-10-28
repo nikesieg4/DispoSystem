@@ -46,6 +46,7 @@
       <nav class="tabs" role="tablist">
         <button class="tab active" role="tab" data-tab="fahrzeuge" aria-selected="true">Fahrzeuge</button>
         <button class="tab" role="tab" data-tab="bereiche" aria-selected="false">Bereiche</button>
+        <button class="tab" role="tab" data-tab="verwaltung" aria-selected="false" id="tab-btn-verwaltung" hidden>Verwaltung</button>
       </nav>
 
       <div id="tab-fahrzeuge" class="tab-panel">
@@ -57,13 +58,72 @@
         <label class="check"><input type="checkbox" id="toggle-bereiche" checked> Bereiche auf der Karte zeigen</label>
         <div id="bereich-liste"></div>
       </div>
+
+      <div id="tab-verwaltung" class="tab-panel" hidden>
+        <p id="vw-error" class="error" role="alert" hidden></p>
+
+        <section id="dienst-box" class="card" hidden>
+          <h2 class="card-title">Mein Dienst</h2>
+          <p id="dienst-text" class="muted"></p>
+          <button id="dienst-btn" type="button" class="btn-ghost"></button>
+        </section>
+
+        <section class="card">
+          <h2 class="card-title">Wachleiter im Dienst</h2>
+          <ul id="dienst-liste" class="plain-list"></ul>
+        </section>
+
+        <p id="vw-gesperrt" class="muted" hidden>Fahrzeuge verwalten können Wachleiter im Dienst und der Höhere Dienst. Melde dich oben in den Dienst.</p>
+
+        <div id="vw-bereich" hidden>
+          <form id="vw-form" class="card form">
+            <h2 class="card-title">Fahrzeug eintragen</h2>
+            <input type="hidden" id="vw-id">
+            <label>Rufname <input id="vw-rufname" required maxlength="40" placeholder="Florian NRW 1/46-1"></label>
+            <label>Fahrzeugtyp <input id="vw-typ" required maxlength="30" placeholder="HLF 20"></label>
+            <label>Wache <select id="vw-wache"></select></label>
+            <div class="row">
+              <button id="vw-submit" type="submit" class="btn-primary">Fahrzeug eintragen</button>
+              <button id="vw-reset" type="button" class="btn-ghost" hidden>Abbrechen</button>
+            </div>
+          </form>
+          <button id="vw-import" type="button" class="btn-ghost" hidden>Beispielfahrzeuge aus data/fahrzeuge.json übernehmen</button>
+          <div id="vw-liste"></div>
+        </div>
+      </div>
     </aside>
 
     <main class="map-wrap">
       <div id="map"></div>
       <button id="coord-btn" class="map-btn" type="button" aria-pressed="false">Koordinaten</button>
+      <div id="pick-banner" class="pick-banner" hidden>
+        Klicke auf die Karte, um die Position zu setzen.
+        <button id="pick-cancel" type="button" class="btn-ghost">Abbrechen</button>
+      </div>
     </main>
   </div>
+
+  <!-- Status ändern -->
+  <dialog id="status-dialog" class="dialog" aria-labelledby="sd-title">
+    <form method="dialog">
+      <h2 id="sd-title"></h2>
+      <p id="sd-sub" class="muted"></p>
+      <div id="sd-status" class="sd-grid" role="group" aria-label="FMS-Status"></div>
+      <label class="field">Einsatz / Bemerkung
+        <input id="sd-einsatz" maxlength="120" placeholder="z. B. Brand Gebäude – Downtown Park">
+      </label>
+      <div class="sd-pos-row">
+        <span id="sd-pos" class="muted small"></span>
+        <button id="sd-pick" type="button" class="btn-ghost">Auf Karte wählen</button>
+        <button id="sd-wache" type="button" class="btn-ghost">Zurück zur Wache</button>
+      </div>
+      <p id="sd-error" class="error" role="alert" hidden></p>
+      <div class="row end">
+        <button id="sd-cancel" type="button" class="btn-ghost">Abbrechen</button>
+        <button id="sd-save" type="submit" class="btn-primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="js/config.js"></script>

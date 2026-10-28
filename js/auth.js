@@ -11,6 +11,7 @@
 
   function scopes() {
     const s = ["identify"];
+    if (cfg.apiUrl) return s.join(" "); // Rollen liest dann der Bot im Worker
     if (cfg.guildId) s.push(cfg.requiredRoleIds.length ? "guilds.members.read" : "guilds");
     return s.join(" ");
   }
@@ -77,6 +78,12 @@
     if (!r.ok) throw new Error("Discord-Profil konnte nicht geladen werden.");
     const user = await r.json();
 
+    if (cfg.apiUrl) {
+      user.rechte = await dispoApi("/api/ich", { token: auth.token });
+      user.nick = user.rechte.name;
+      return user;
+    }
+
     if (cfg.guildId && cfg.requiredRoleIds.length) {
       const m = await api(`/users/@me/guilds/${cfg.guildId}/member`, auth.token);
       if (!m.ok) throw new Error("Du bist kein Mitglied des Fraktionsservers.");
@@ -95,5 +102,19 @@
     return user;
   }
 
-  window.DispoAuth = { login, logout, handleCallback, stored, verify };
+  // Aufruf der Dispo-API (Cloudflare Worker) mit dem Discord-Token.
+  async function dispoApi(path, { method = "GET", body, token } = {}) {
+    token = token || (stored() || {}).token;
+    const r = await fetch(cfg.apiUrl.replace(/\/$/, "") + path, {
+      method,
+      headers: { Authorization: "Bearer " + token, ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 401) sessionStorage.removeItem(KEY);
+    if (!r.ok) throw new Error(data.fehler || "Server nicht erreichbar.");
+    return data;
+  }
+
+  window.DispoAuth = { login, logout, handleCallback, stored, verify, api: dispoApi };
 })();
