@@ -69,10 +69,10 @@ Kostenlos über Cloudflare, alles im Browser:
    | `BOT_TOKEN` | **Secret** | Bot-Token aus Schritt 1 |
    | `GUILD_ID` | Text | `1506205676136038491` |
    | `ALLOWED_ORIGIN` | Text | `https://nikesieg4.github.io` |
-   | `ROLLEN_HOEHERER_DIENST` | Text (optional) | Standard: `Brandreferendar,Brandrat,Brandoberrat,Branddirektor,Abteilungsleiter EB,Stv. Kreisbranddirektor,Kreisbranddirektor` |
+   | `ROLLEN_HOEHERER_DIENST` | Text (optional) | Standard: `Brandreferendar,Brandrat,Brandoberrat,Branddirektor,Abteilungsleiter Einsatzbetrieb,Stv. Kreisbranddirektor,Kreisbranddirektor` |
    | `ROLLEN_WACHLEITER` | Text (optional) | Standard: `Wachleiter` |
 
-   Rollen können per Name (Präfixe wie `[BD] ` werden ignoriert) oder per
+   Rollen können per Name (Abkürzungen wie `BD » [Branddirektor]` oder `[BD] Branddirektor` werden ignoriert) oder per
    Rollen-ID angegeben werden, mehrere mit Komma getrennt.
 7. Die Worker-Adresse (z. B. `https://dispo-api.DEINNAME.workers.dev`) in
    `js/config.js` bei `apiUrl` eintragen und committen.

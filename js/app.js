@@ -236,6 +236,19 @@
     initCoordTool();
     if (mitApi()) initStatusDialog();
     if (rechte && (rechte.wachleiter || rechte.hoehererDienst)) initVerwaltung();
+    if (rechte) zeigeRechte();
+  }
+
+  // Hilft beim Einrichten: zeigt, welche Rollen der Bot erkennt.
+  function zeigeRechte() {
+    const r = rechte;
+    $("#rechte-info").hidden = false;
+    $("#rechte-text").textContent = r.hoehererDienst
+      ? "Höherer Dienst – du kannst Fahrzeuge verwalten."
+      : r.wachleiter
+        ? "Wachleiter – im Dienst kannst du Fahrzeuge verwalten."
+        : "Mitglied – du kannst Status ändern. Für die Verwaltung fehlt eine Wachleiter- oder Höherer-Dienst-Rolle.";
+    $("#rechte-rollen").textContent = (r.rollen || []).join(", ") || "keine (Worker-Code aktuell?)";
   }
 
   function stationGroups(items, render) {

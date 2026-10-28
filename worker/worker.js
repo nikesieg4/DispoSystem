@@ -18,7 +18,7 @@ let DISCORD = "https://discord.com/api/v10";
 const DIENST_MAX_STUNDEN = 12;
 
 const STANDARD_HOEHERER_DIENST =
-  "Brandreferendar,Brandrat,Brandoberrat,Branddirektor,Abteilungsleiter EB,Stv. Kreisbranddirektor,Kreisbranddirektor";
+  "Brandreferendar,Brandrat,Brandoberrat,Branddirektor,Abteilungsleiter EB,Abteilungsleiter Einsatzbetrieb,Stv. Kreisbranddirektor,Kreisbranddirektor";
 const STANDARD_WACHLEITER = "Wachleiter";
 
 const SCHEMA = [
@@ -170,8 +170,8 @@ async function anmelden(request, env) {
     return { id, name: rolle ? normalisieren(rolle.name) : "" };
   });
   const passt = (liste) => {
-    const ziele = liste.split(",").map((s) => s.trim()).filter(Boolean);
-    return namen.some((r) => ziele.includes(r.id) || ziele.includes(r.name));
+    const ziele = liste.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    return namen.some((r) => ziele.includes(r.id) || ziele.includes(r.name.toLowerCase()));
   };
 
   const ich = {
@@ -179,6 +179,7 @@ async function anmelden(request, env) {
     name: member.nick || user.global_name || user.username,
     hoehererDienst: passt(env.ROLLEN_HOEHERER_DIENST || STANDARD_HOEHERER_DIENST),
     wachleiter: passt(env.ROLLEN_WACHLEITER || STANDARD_WACHLEITER),
+    rollen: namen.map((r) => r.name).filter(Boolean),
   };
   return rechte(ich, env);
 }
@@ -207,12 +208,12 @@ async function serverRollen(env) {
   return rollenCache.rollen;
 }
 
-// "[BD] Branddirektor", "BD ┃ Branddirektor", "⭐︱Branddirektor" → "Branddirektor"
+// "BD » [Branddirektor]", "[BD] Branddirektor", "BD ┃ Branddirektor",
+// "⭐︱Branddirektor" → "Branddirektor"
 function normalisieren(name) {
-  return name
-    .replace(/^\s*\[[^\]]*\]\s*/, "")
-    .replace(/^.*?[︱┃│]\s*/, "")
-    .trim();
+  const n = name.trim().replace(/^.*?[»︱┃│]\s*/, "");
+  const geklammert = n.match(/^\[([^\]]+)\]$/);
+  return (geklammert ? geklammert[1] : n.replace(/^\[[^\]]*\]\s*/, "")).trim();
 }
 
 async function dienstListe(env) {
