@@ -11,7 +11,7 @@ window.DISPO_CONFIG = {
   // Adresse der Dispo-API (Cloudflare Worker, siehe README). Leer = nur
   // Anzeige aus data/fahrzeuge.json, ohne Status ändern und Verwaltung.
   // Mit API prüft der Bot im Worker Mitgliedschaft und Rollen.
-  apiUrl: "",
+  apiUrl: "https://dispo-api.nikesieg0.workers.dev",
 
   // Nur ohne API: zusätzlich nur Mitglieder mit einer dieser Rollen-IDs.
   // Beispiel: ["123456789012345678"]. Leer = Servermitgliedschaft reicht.
