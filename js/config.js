@@ -2,7 +2,7 @@
 window.DISPO_CONFIG = {
   // Discord-Anwendung: https://discord.com/developers/applications → OAuth2
   // Die "Client ID" ist öffentlich und darf hier stehen (das Client Secret NIE!).
-  discordClientId: "DEINE_CLIENT_ID",
+  discordClientId: "1564641901481566248",
 
   // Nur Mitglieder dieses Servers dürfen rein (Berufsfeuerwehr NRW RP).
   // Leer lassen ("") = jeder mit Discord-Account.
