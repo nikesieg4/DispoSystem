@@ -67,6 +67,12 @@
       <div id="tab-verwaltung" class="tab-panel" hidden>
         <p id="vw-error" class="error" role="alert" hidden></p>
 
+        <section class="card">
+          <h2 class="card-title">Aktivität</h2>
+          <p class="muted small">Zeit auf Fahrzeugen, Dienstzeiten der Wachleiter, Statusmeldungen und Verwaltungsaktionen – mit CSV-Export.</p>
+          <button id="akt-btn" type="button" class="btn-ghost">Aktivität ansehen</button>
+        </section>
+
         <section id="dienst-box" class="card" hidden>
           <h2 class="card-title">Mein Dienst</h2>
           <p id="dienst-text" class="muted"></p>
@@ -157,6 +163,46 @@
     </form>
     <datalist id="cd-fzf-optionen"></datalist>
     <datalist id="cd-optionen"></datalist>
+  </dialog>
+
+  <!-- Aktivität -->
+  <dialog id="akt-dialog" class="dialog dialog-wide" aria-labelledby="akt-title">
+    <div class="akt-head">
+      <h2 id="akt-title">Aktivität</h2>
+      <label class="akt-zeitraum">Zeitraum
+        <select id="akt-zeitraum">
+          <option value="7">Letzte 7 Tage</option>
+          <option value="30">Letzte 30 Tage</option>
+          <option value="0">Gesamt</option>
+        </select>
+      </label>
+      <span class="grow"></span>
+      <button id="akt-csv" type="button" class="btn-ghost">Rangliste als CSV</button>
+      <button id="akt-csv-zut" type="button" class="btn-ghost">Zuteilungen als CSV</button>
+      <button id="akt-close" type="button" class="btn-ghost">Schließen</button>
+    </div>
+    <p id="akt-error" class="error" role="alert" hidden></p>
+    <div class="table-wrap">
+      <table class="akt-table">
+        <thead>
+          <tr>
+            <th><button type="button" data-sort="name">Name</button></th>
+            <th class="num"><button type="button" data-sort="fahrzeugMs">Zeit auf Fahrzeugen</button></th>
+            <th class="num"><button type="button" data-sort="fzfMs">davon FzF</button></th>
+            <th class="num"><button type="button" data-sort="zuteilungen">Zuteilungen</button></th>
+            <th><button type="button" data-sort="aktuellAuf">Aktuell auf</button></th>
+            <th><button type="button" data-sort="zuletztZugeteiltVon">Zuletzt zugeteilt von</button></th>
+            <th class="num"><button type="button" data-sort="dienstMs">Dienst als WL</button></th>
+            <th class="num"><button type="button" data-sort="statusMeldungen">Status&shy;meldungen</button></th>
+            <th class="num"><button type="button" data-sort="verwaltung">Verwaltung</button></th>
+            <th><button type="button" data-sort="zuletztAktiv">Zuletzt aktiv</button></th>
+          </tr>
+        </thead>
+        <tbody id="akt-body"></tbody>
+      </table>
+    </div>
+    <h3 class="akt-sub">Letzte Aktionen</h3>
+    <ul id="akt-log" class="akt-log"></ul>
   </dialog>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>

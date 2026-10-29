@@ -538,6 +538,7 @@
     });
 
     initCrewDialog();
+    initAktivitaet();
     renderVerwaltung();
   }
 
@@ -582,6 +583,127 @@
     $("#vw-id").value = "";
     $("#vw-submit").textContent = "Fahrzeug eintragen";
     $("#vw-reset").hidden = true;
+  }
+
+  // ---------- Aktivität ----------
+
+  let aktDaten = null;
+  let aktSort = { key: "fahrzeugMs", desc: true };
+
+  const AKT_AKTIONEN = { status: "Status", fahrzeug: "Fahrzeug", besatzung: "Besatzung", dienst: "Dienst" };
+
+  function initAktivitaet() {
+    $("#akt-btn").addEventListener("click", () => {
+      $("#akt-dialog").showModal();
+      ladeAktivitaet();
+    });
+    $("#akt-close").addEventListener("click", () => $("#akt-dialog").close());
+    $("#akt-zeitraum").addEventListener("change", ladeAktivitaet);
+    document.querySelectorAll("#akt-dialog [data-sort]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const key = b.dataset.sort;
+        aktSort = { key, desc: aktSort.key === key ? !aktSort.desc : !["name", "aktuellAuf", "zuletztZugeteiltVon"].includes(key) };
+        renderAktivitaet();
+      })
+    );
+    $("#akt-csv").addEventListener("click", () => aktDaten && csvRangliste());
+    $("#akt-csv-zut").addEventListener("click", () => aktDaten && csvZuteilungen());
+  }
+
+  async function ladeAktivitaet() {
+    $("#akt-error").hidden = true;
+    $("#akt-body").innerHTML = '<tr><td colspan="10" class="leer">Lädt …</td></tr>';
+    try {
+      aktDaten = await DispoAuth.api("/api/aktivitaet?tage=" + $("#akt-zeitraum").value);
+      renderAktivitaet();
+    } catch (err) {
+      aktDaten = null;
+      $("#akt-body").innerHTML = "";
+      zeigeFehler("#akt-error", err);
+    }
+  }
+
+  function renderAktivitaet() {
+    document.querySelectorAll("#akt-dialog [data-sort]").forEach((b) => {
+      if (b.dataset.sort === aktSort.key) b.setAttribute("aria-sort", aktSort.desc ? "descending" : "ascending");
+      else b.removeAttribute("aria-sort");
+    });
+    const { key, desc } = aktSort;
+    const personen = [...aktDaten.personen].sort((a, b) => {
+      const x = a[key] ?? "", y = b[key] ?? "";
+      const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "de");
+      return desc ? -c : c;
+    });
+    const leer = '<span class="leer">–</span>';
+    $("#akt-body").innerHTML = personen.length
+      ? personen.map((p) => `<tr>
+          <td>${esc(p.name)}</td>
+          <td class="num">${p.fahrzeugMs ? fmtDauer(p.fahrzeugMs) : leer}</td>
+          <td class="num">${p.fzfMs ? fmtDauer(p.fzfMs) : leer}</td>
+          <td class="num">${p.zuteilungen || leer}</td>
+          <td>${p.aktuellAuf ? esc(p.aktuellAuf) : leer}</td>
+          <td>${p.zuletztZugeteiltVon ? esc(p.zuletztZugeteiltVon) : leer}</td>
+          <td class="num">${p.dienstMs ? fmtDauer(p.dienstMs) : leer}</td>
+          <td class="num">${p.statusMeldungen || leer}</td>
+          <td class="num">${p.verwaltung || leer}</td>
+          <td>${p.zuletztAktiv ? fmtZeit(p.zuletztAktiv) : leer}</td>
+        </tr>`).join("")
+      : '<tr><td colspan="10" class="leer">In diesem Zeitraum gibt es noch keine Aktivität.</td></tr>';
+
+    $("#akt-log").innerHTML = aktDaten.protokoll.length
+      ? aktDaten.protokoll.map((e) =>
+          `<li><time datetime="${esc(e.zeit)}">${fmtZeit(e.zeit)}</time><b>${esc(e.name)}</b> · ${esc(AKT_AKTIONEN[e.aktion] || e.aktion)}: ${esc(e.details)}</li>`
+        ).join("")
+      : '<li class="muted">Noch keine Aktionen.</li>';
+  }
+
+  function fmtDauer(ms) {
+    const min = Math.round(ms / 60000);
+    const h = Math.floor(min / 60);
+    return h ? `${h} h ${String(min % 60).padStart(2, "0")} min` : `${min} min`;
+  }
+
+  function fmtZeit(iso) {
+    return new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+
+  const stunden = (ms) => (ms / 3600000).toFixed(2).replace(".", ",");
+
+  function csvRangliste() {
+    const kopf = ["Name", "Discord-ID", "Zeit auf Fahrzeugen (Std.)", "davon FzF (Std.)", "Zuteilungen", "Aktuell auf",
+      "Zuletzt zugeteilt von", "Dienst als Wachleiter (Std.)", "Statusmeldungen", "Verwaltungsaktionen", "Zuletzt aktiv"];
+    const zeilen = aktDaten.personen.map((p) => [
+      p.name, p.userId || "", stunden(p.fahrzeugMs), stunden(p.fzfMs), p.zuteilungen, p.aktuellAuf || "",
+      p.zuletztZugeteiltVon || "", stunden(p.dienstMs), p.statusMeldungen, p.verwaltung,
+      p.zuletztAktiv ? new Date(p.zuletztAktiv).toLocaleString("de-DE") : "",
+    ]);
+    csvHerunterladen("aktivitaet", [kopf, ...zeilen]);
+  }
+
+  function csvZuteilungen() {
+    const kopf = ["Name", "Discord-ID", "Fahrzeug", "Rolle", "Von", "Bis", "Dauer (Std.)", "Zugeteilt von", "Ausgetragen von"];
+    const zeilen = aktDaten.zuteilungen.map((z) => [
+      z.name, z.userId || "", z.rufname || "", z.rolle || "",
+      new Date(z.von).toLocaleString("de-DE"), z.bis ? new Date(z.bis).toLocaleString("de-DE") : "noch zugeteilt",
+      stunden((z.bis ? Date.parse(z.bis) : Date.now()) - Date.parse(z.von)), z.zugeteiltVon || "", z.ausgetragenVon || "",
+    ]);
+    csvHerunterladen("zuteilungen", [kopf, ...zeilen]);
+  }
+
+  // Semikolon + BOM, damit Excel (deutsch) Umlaute und Spalten richtig erkennt.
+  function csvHerunterladen(name, zeilen) {
+    const zelle = (v) => {
+      let s = String(v ?? "");
+      if (/^[=+\-@]/.test(s)) s = "'" + s; // keine Formeln in Excel ausführen
+      return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const inhalt = "\ufeff" + zeilen.map((z) => z.map(zelle).join(";")).join("\r\n");
+    const zeitraum = { 7: "7-tage", 30: "30-tage", 0: "gesamt" }[$("#akt-zeitraum").value];
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([inhalt], { type: "text/csv;charset=utf-8" }));
+    a.download = `${name}_${zeitraum}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
   // ---------- Besatzung zuteilen ----------

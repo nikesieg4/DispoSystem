@@ -22,6 +22,14 @@ eingeteilt wird, wird automatisch von seinem bisherigen Fahrzeug
 ausgetragen. Die Besatzung sehen alle in der Fahrzeugliste, auf der Karte
 und im Status-Fenster.
 
+**Aktivität** (Verwaltung → *Aktivität ansehen*, für Wachleiter und den
+Höheren Dienst): Rangliste für 7 Tage, 30 Tage oder gesamt mit der Zeit auf
+Fahrzeugen (davon als FzF), Anzahl Zuteilungen, aktuellem Fahrzeug, wer
+zuletzt zugeteilt hat, Dienstzeit als Wachleiter, Statusmeldungen und
+Verwaltungsaktionen, dazu die letzten Aktionen im Protokoll. Beides als CSV
+für Excel: die Rangliste und alle einzelnen Zuteilungen mit *zugeteilt von*
+und *ausgetragen von*. Zuteilungen laufen, bis jemand ausgetragen wird.
+
 Die Rollen liest der Discord-Bot auf dem Server aus – sie lassen sich im
 Browser nicht fälschen. Eine Dienstmeldung läuft nach 12 Stunden ab.
 

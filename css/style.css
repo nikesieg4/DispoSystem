@@ -191,6 +191,30 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 0;
 .grow { flex: 1; }
 .popup-crew { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 12px; }
 
+/* Aktivität */
+.dialog.dialog-wide { width: min(1180px, calc(100vw - 32px)); max-height: calc(100vh - 48px); }
+.akt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.akt-head h2 { margin-right: 8px; }
+.akt-zeitraum { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+.akt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.akt-table th, .akt-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.akt-table th { background: var(--panel-2); position: sticky; top: 0; }
+.akt-table th button {
+  border: 0; background: none; color: var(--muted); font-weight: 600; font-size: 12px; padding: 0; min-height: 28px;
+}
+.akt-table th button[aria-sort] { color: var(--text); }
+.akt-table th button[aria-sort="descending"]::after { content: " ▼"; }
+.akt-table th button[aria-sort="ascending"]::after { content: " ▲"; }
+.akt-table .num { text-align: right; }
+.akt-table th.num button { text-align: right; }
+.akt-table tbody tr:hover { background: var(--panel-2); }
+.akt-table .leer { color: var(--muted); }
+.akt-sub { font-size: 14px; margin: 16px 0 8px; }
+.akt-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; max-height: 260px; overflow-y: auto; }
+.akt-log time { color: var(--muted); margin-right: 6px; }
+.akt-log b { font-weight: 600; }
+
 /* Status-Dialog */
 .dialog {
   width: min(480px, calc(100vw - 32px)); padding: 20px; border-radius: 12px;

@@ -5,6 +5,7 @@
 //   • Mitglied            → Karte sehen, Fahrzeugstatus ändern
 //   • Wachleiter im Dienst → zusätzlich Fahrzeuge verwalten
 //   • Höherer Dienst       → Fahrzeuge verwalten (immer)
+//   • Wachleiter & Höherer Dienst sehen die Aktivitäts-Auswertung
 //
 // Einstellungen (Cloudflare → Worker → Settings → Variables):
 //   BOT_TOKEN        (Secret!) Token des Discord-Bots
@@ -32,6 +33,20 @@ const SCHEMA = [
      geaendert_von TEXT, geaendert_am TEXT)`,
   `CREATE TABLE IF NOT EXISTS dienst (
      user_id TEXT PRIMARY KEY, name TEXT NOT NULL, seit TEXT NOT NULL)`,
+  // Aktivität: wer war wann auf welchem Fahrzeug, wer war im Dienst, wer hat was getan
+  `CREATE TABLE IF NOT EXISTS zuteilungen (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, person TEXT NOT NULL, user_id TEXT, name TEXT NOT NULL,
+     fahrzeug_id TEXT NOT NULL, rufname TEXT, rolle TEXT, von TEXT NOT NULL, bis TEXT,
+     zugeteilt_von TEXT, ausgetragen_von TEXT)`,
+  "CREATE INDEX IF NOT EXISTS zuteilungen_offen ON zuteilungen (fahrzeug_id, person, bis)",
+  "CREATE INDEX IF NOT EXISTS zuteilungen_bis ON zuteilungen (bis)",
+  `CREATE TABLE IF NOT EXISTS dienstzeiten (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, name TEXT NOT NULL,
+     von TEXT NOT NULL, bis TEXT, beendet TEXT)`,
+  `CREATE TABLE IF NOT EXISTS protokoll (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, zeit TEXT NOT NULL, user_id TEXT NOT NULL, name TEXT NOT NULL,
+     aktion TEXT NOT NULL, details TEXT)`,
+  "CREATE INDEX IF NOT EXISTS protokoll_zeit ON protokoll (zeit)",
 ];
 // Spalten, die später dazugekommen sind (für bestehende Datenbanken)
 const NEUE_SPALTEN = { fzf: "TEXT", besatzung: "TEXT" };
@@ -91,12 +106,15 @@ async function route(request, env) {
     const status = Number(body.status);
     if (!Number.isInteger(status) || status < 1 || status > 8) throw fehler(400, "Status muss 1–8 sein.");
     const pos = position(body.position);
-    const r = await env.DB.prepare(
-      `UPDATE fahrzeuge SET status = ?, einsatz = ?, lat = ?, lng = ?, geaendert_von = ?, geaendert_am = ? WHERE id = ?`
-    )
-      .bind(status, text(body.einsatz, 120), pos && pos[0], pos && pos[1], ich.name, jetzt(), m[1])
-      .run();
-    if (!r.meta.changes) throw fehler(404, "Fahrzeug nicht gefunden.");
+    const f = await env.DB.prepare("SELECT rufname FROM fahrzeuge WHERE id = ?").bind(m[1]).first();
+    if (!f) throw fehler(404, "Fahrzeug nicht gefunden.");
+    const einsatz = text(body.einsatz, 120);
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE fahrzeuge SET status = ?, einsatz = ?, lat = ?, lng = ?, geaendert_von = ?, geaendert_am = ? WHERE id = ?`
+      ).bind(status, einsatz, pos && pos[0], pos && pos[1], ich.name, jetzt(), m[1]),
+      protokoll(env, ich, "status", `${f.rufname}: Status ${status}${einsatz ? " – " + einsatz : ""}`),
+    ]);
     return json({ ok: true });
   }
 
@@ -109,11 +127,15 @@ async function route(request, env) {
     if (besatzung.length > MAX_BESATZUNG) throw fehler(400, `Höchstens ${MAX_BESATZUNG} Personen Besatzung.`);
     for (const p of besatzung) p.funktion = text(p.funktion, 30);
 
+    const { results } = await env.DB.prepare("SELECT id, rufname, fzf, besatzung FROM fahrzeuge").all();
+    const dieses = results.find((f) => f.id === m[1]);
+    if (!dieses) throw fehler(404, "Fahrzeug nicht gefunden.");
+
     // Wer neu eingeteilt wird, wird aus anderen Fahrzeugen ausgetragen.
     const ids = [fzf, ...besatzung].filter((p) => p && p.userId).map((p) => p.userId);
-    const { results } = await env.DB.prepare("SELECT id, fzf, besatzung FROM fahrzeuge WHERE id != ?").bind(m[1]).all();
     const updates = [];
     for (const f of results) {
+      if (f.id === m[1]) continue;
       const altFzf = parse(f.fzf);
       const altBes = parse(f.besatzung) || [];
       const neuFzf = altFzf && ids.includes(altFzf.userId) ? null : altFzf;
@@ -121,13 +143,15 @@ async function route(request, env) {
       if (neuFzf !== altFzf || neuBes.length !== altBes.length) {
         updates.push(env.DB.prepare("UPDATE fahrzeuge SET fzf = ?, besatzung = ? WHERE id = ?")
           .bind(neuFzf ? JSON.stringify(neuFzf) : null, JSON.stringify(neuBes), f.id));
+        updates.push(...zuteilungenAbgleichen(env, ich, f, [altFzf, altBes], [neuFzf, neuBes]));
       }
     }
     updates.push(env.DB.prepare(
       "UPDATE fahrzeuge SET fzf = ?, besatzung = ?, geaendert_von = ?, geaendert_am = ? WHERE id = ?"
     ).bind(fzf ? JSON.stringify(fzf) : null, JSON.stringify(besatzung), ich.name, jetzt(), m[1]));
-    const r = await env.DB.batch(updates);
-    if (!r[r.length - 1].meta.changes) throw fehler(404, "Fahrzeug nicht gefunden.");
+    updates.push(...zuteilungenAbgleichen(env, ich, dieses,
+      [parse(dieses.fzf), parse(dieses.besatzung) || []], [fzf, besatzung]));
+    await env.DB.batch(updates);
     return json({ ok: true });
   }
 
@@ -145,20 +169,29 @@ async function route(request, env) {
     const wache = String(b.wache || "");
     if (!rufname || !typ) throw fehler(400, "Rufname und Typ sind Pflicht.");
     if (!/^[A-Z0-9]{1,8}$/.test(wache)) throw fehler(400, "Ungültige Wache.");
-    await env.DB.prepare(
-      `INSERT INTO fahrzeuge (id, rufname, typ, wache, status, geaendert_von, geaendert_am)
-       VALUES (?, ?, ?, ?, 2, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET rufname = excluded.rufname, typ = excluded.typ, wache = excluded.wache,
-         geaendert_von = excluded.geaendert_von, geaendert_am = excluded.geaendert_am`
-    )
-      .bind(m[1], rufname, typ, wache, ich.name, jetzt())
-      .run();
+    const gab = await env.DB.prepare("SELECT 1 FROM fahrzeuge WHERE id = ?").bind(m[1]).first();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO fahrzeuge (id, rufname, typ, wache, status, geaendert_von, geaendert_am)
+         VALUES (?, ?, ?, ?, 2, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET rufname = excluded.rufname, typ = excluded.typ, wache = excluded.wache,
+           geaendert_von = excluded.geaendert_von, geaendert_am = excluded.geaendert_am`
+      ).bind(m[1], rufname, typ, wache, ich.name, jetzt()),
+      protokoll(env, ich, "fahrzeug", `${rufname} (${typ}, ${wache}) ${gab ? "geändert" : "angelegt"}`),
+    ]);
     return json({ ok: true });
   }
 
   if (m && methode === "DELETE") {
     darfVerwalten(ich);
-    await env.DB.prepare("DELETE FROM fahrzeuge WHERE id = ?").bind(m[1]).run();
+    const f = await env.DB.prepare("SELECT rufname FROM fahrzeuge WHERE id = ?").bind(m[1]).first();
+    if (!f) return json({ ok: true });
+    await env.DB.batch([
+      env.DB.prepare("UPDATE zuteilungen SET bis = ?, ausgetragen_von = ? WHERE fahrzeug_id = ? AND bis IS NULL")
+        .bind(jetzt(), ich.name, m[1]),
+      env.DB.prepare("DELETE FROM fahrzeuge WHERE id = ?").bind(m[1]),
+      protokoll(env, ich, "fahrzeug", `${f.rufname} gelöscht`),
+    ]);
     return json({ ok: true });
   }
 
@@ -169,14 +202,29 @@ async function route(request, env) {
   if (pfad === "/api/dienst" && methode === "POST") {
     if (!ich.wachleiter) throw fehler(403, "Nur Wachleiter können sich in den Dienst melden.");
     const { aktiv } = await request.json();
-    if (aktiv) {
-      await env.DB.prepare("INSERT OR REPLACE INTO dienst (user_id, name, seit) VALUES (?, ?, ?)")
-        .bind(ich.id, ich.name, jetzt())
-        .run();
-    } else {
-      await env.DB.prepare("DELETE FROM dienst WHERE user_id = ?").bind(ich.id).run();
+    if (aktiv && !ich.imDienst) {
+      await env.DB.batch([
+        env.DB.prepare("INSERT OR REPLACE INTO dienst (user_id, name, seit) VALUES (?, ?, ?)").bind(ich.id, ich.name, jetzt()),
+        env.DB.prepare("INSERT INTO dienstzeiten (user_id, name, von) VALUES (?, ?, ?)").bind(ich.id, ich.name, jetzt()),
+        protokoll(env, ich, "dienst", "Dienst angetreten"),
+      ]);
+    } else if (!aktiv && ich.imDienst) {
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM dienst WHERE user_id = ?").bind(ich.id),
+        env.DB.prepare("UPDATE dienstzeiten SET bis = ?, beendet = 'selbst' WHERE user_id = ? AND bis IS NULL")
+          .bind(jetzt(), ich.id),
+        protokoll(env, ich, "dienst", "Dienst beendet"),
+      ]);
     }
     return json(await rechte(ich, env));
+  }
+
+  if (pfad === "/api/aktivitaet" && methode === "GET") {
+    if (!ich.wachleiter && !ich.hoehererDienst) {
+      throw fehler(403, "Die Aktivität sehen nur Wachleiter und der Höhere Dienst.");
+    }
+    const tage = Math.max(0, Math.min(3650, Number(url.searchParams.get("tage")) || 0));
+    return json(await aktivitaet(env, tage));
   }
 
   throw fehler(404, "Unbekannter Pfad.");
@@ -304,9 +352,133 @@ async function mitglieder(env) {
 
 async function dienstListe(env) {
   const grenze = new Date(Date.now() - DIENST_MAX_STUNDEN * 3600 * 1000).toISOString();
-  await env.DB.prepare("DELETE FROM dienst WHERE seit < ?").bind(grenze).run();
+  const { results: abgelaufen } = await env.DB.prepare("SELECT * FROM dienst WHERE seit < ?").bind(grenze).all();
+  if (abgelaufen.length) {
+    // Dienstzeit endet nach DIENST_MAX_STUNDEN, nicht erst beim nächsten Aufruf
+    await env.DB.batch(abgelaufen.flatMap((d) => [
+      env.DB.prepare("UPDATE dienstzeiten SET bis = ?, beendet = 'automatisch' WHERE user_id = ? AND bis IS NULL")
+        .bind(new Date(Date.parse(d.seit) + DIENST_MAX_STUNDEN * 3600 * 1000).toISOString(), d.user_id),
+      env.DB.prepare("DELETE FROM dienst WHERE user_id = ?").bind(d.user_id),
+    ]));
+  }
   const { results } = await env.DB.prepare("SELECT * FROM dienst ORDER BY seit").all();
   return results.map((d) => ({ userId: d.user_id, name: d.name, seit: d.seit }));
+}
+
+// ---------- Aktivität ----------
+
+const personKey = (p) => p.userId || "name:" + p.name.toLowerCase();
+
+function protokoll(env, ich, aktion, details) {
+  return env.DB.prepare("INSERT INTO protokoll (zeit, user_id, name, aktion, details) VALUES (?, ?, ?, ?, ?)")
+    .bind(jetzt(), ich.id, ich.name, aktion, details);
+}
+
+// Vergleicht die alte und neue Besatzung eines Fahrzeugs und schreibt die
+// Zuteilungen fort: Neue bekommen eine offene Zuteilung, Ausgetragene eine Endzeit.
+function zuteilungenAbgleichen(env, ich, fahrzeug, [altFzf, altBes], [neuFzf, neuBes]) {
+  const liste = (fzf, bes) => {
+    const map = new Map();
+    if (fzf) map.set(personKey(fzf), { p: fzf, rolle: "FzF" });
+    for (const p of bes) map.set(personKey(p), { p, rolle: p.funktion || "Besatzung" });
+    return map;
+  };
+  const alt = liste(altFzf, altBes);
+  const neu = liste(neuFzf, neuBes);
+  const t = jetzt();
+  const stmts = [];
+
+  for (const [key, { p }] of alt) {
+    if (neu.has(key)) continue;
+    stmts.push(env.DB.prepare(
+      "UPDATE zuteilungen SET bis = ?, ausgetragen_von = ? WHERE fahrzeug_id = ? AND person = ? AND bis IS NULL"
+    ).bind(t, ich.name, fahrzeug.id, key));
+    stmts.push(protokoll(env, ich, "besatzung", `${p.name} von ${fahrzeug.rufname} ausgetragen`));
+  }
+  for (const [key, { p, rolle }] of neu) {
+    const vorher = alt.get(key);
+    // Offene Zuteilung anlegen, falls es noch keine gibt (auch für Besatzungen von vor dem Tracking)
+    stmts.push(env.DB.prepare(
+      `INSERT INTO zuteilungen (person, user_id, name, fahrzeug_id, rufname, rolle, von, zugeteilt_von)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS
+         (SELECT 1 FROM zuteilungen WHERE fahrzeug_id = ? AND person = ? AND bis IS NULL)`
+    ).bind(key, p.userId || null, p.name, fahrzeug.id, fahrzeug.rufname, rolle, t, ich.name, fahrzeug.id, key));
+    if (!vorher) {
+      stmts.push(protokoll(env, ich, "besatzung", `${p.name} auf ${fahrzeug.rufname} eingeteilt (${rolle})`));
+    } else if (vorher.rolle !== rolle) {
+      stmts.push(env.DB.prepare(
+        "UPDATE zuteilungen SET rolle = ? WHERE fahrzeug_id = ? AND person = ? AND bis IS NULL"
+      ).bind(rolle, fahrzeug.id, key));
+      stmts.push(protokoll(env, ich, "besatzung", `${p.name} auf ${fahrzeug.rufname}: ${vorher.rolle} → ${rolle}`));
+    }
+  }
+  return stmts;
+}
+
+// Auswertung für die Verwaltung: Zeiten pro Person im gewählten Zeitraum (0 = gesamt).
+async function aktivitaet(env, tage) {
+  const nun = Date.now();
+  const start = tage ? nun - tage * 86400 * 1000 : 0;
+  const startIso = new Date(start).toISOString();
+
+  const [zut, dienste, zaehler, letzte] = await env.DB.batch([
+    env.DB.prepare("SELECT * FROM zuteilungen WHERE bis IS NULL OR bis >= ? ORDER BY von DESC LIMIT 5000").bind(startIso),
+    env.DB.prepare("SELECT * FROM dienstzeiten WHERE bis IS NULL OR bis >= ?").bind(startIso),
+    env.DB.prepare(
+      "SELECT user_id, MAX(name) AS name, aktion, COUNT(*) AS n, MAX(zeit) AS letzte FROM protokoll WHERE zeit >= ? GROUP BY user_id, aktion"
+    ).bind(startIso),
+    env.DB.prepare("SELECT zeit, name, aktion, details FROM protokoll WHERE zeit >= ? ORDER BY id DESC LIMIT 100").bind(startIso),
+  ]);
+
+  const dauer = (von, bis) =>
+    Math.max(0, Math.min(bis ? Date.parse(bis) : nun, nun) - Math.max(Date.parse(von), start));
+  const personen = new Map();
+  const hole = (key, name) => {
+    if (!personen.has(key)) {
+      personen.set(key, {
+        key, userId: key.startsWith("name:") ? null : key, name,
+        fahrzeugMs: 0, fzfMs: 0, zuteilungen: 0, aktuellAuf: null, zuletztZugeteiltVon: null,
+        dienstMs: 0, statusMeldungen: 0, verwaltung: 0, zuletztAktiv: null,
+      });
+    }
+    return personen.get(key);
+  };
+  const aktiv = (p, zeit) => {
+    if (zeit && (!p.zuletztAktiv || zeit > p.zuletztAktiv)) p.zuletztAktiv = zeit;
+  };
+
+  for (const z of zut.results) { // neueste zuerst
+    const p = hole(z.person, z.name);
+    const ms = dauer(z.von, z.bis);
+    p.fahrzeugMs += ms;
+    if (z.rolle === "FzF") p.fzfMs += ms;
+    p.zuteilungen += 1;
+    if (!z.bis && !p.aktuellAuf) p.aktuellAuf = z.rufname;
+    if (!p.zuletztZugeteiltVon) p.zuletztZugeteiltVon = z.zugeteilt_von;
+    aktiv(p, z.bis || new Date(nun).toISOString());
+  }
+  for (const d of dienste.results) {
+    const p = hole(d.user_id, d.name);
+    p.dienstMs += dauer(d.von, d.bis);
+    aktiv(p, d.bis || new Date(nun).toISOString());
+  }
+  for (const c of zaehler.results) {
+    const p = hole(c.user_id, c.name);
+    if (c.aktion === "status") p.statusMeldungen += c.n;
+    if (c.aktion === "fahrzeug" || c.aktion === "besatzung") p.verwaltung += c.n;
+    aktiv(p, c.letzte);
+  }
+
+  return {
+    von: tage ? startIso : null,
+    bis: new Date(nun).toISOString(),
+    personen: [...personen.values()].sort((a, b) => b.fahrzeugMs - a.fahrzeugMs || b.dienstMs - a.dienstMs),
+    zuteilungen: zut.results.map((z) => ({
+      name: z.name, userId: z.user_id, rufname: z.rufname, rolle: z.rolle, von: z.von, bis: z.bis,
+      zugeteiltVon: z.zugeteilt_von, ausgetragenVon: z.ausgetragen_von,
+    })),
+    protokoll: letzte.results,
+  };
 }
 
 // ---------- Hilfsfunktionen ----------
