@@ -194,7 +194,7 @@ async function route(request, env, ctx) {
   if (m && methode === "POST") {
     const body = await request.json();
     const status = Number(body.status);
-    if (!Number.isInteger(status) || status < 1 || status > 8) throw fehler(400, "Status muss 1–8 sein.");
+    if (!Number.isInteger(status) || status < 0 || status > 9) throw fehler(400, "Status muss 0–9 sein.");
     const pos = position(body.position);
     const f = await env.DB.prepare("SELECT rufname FROM fahrzeuge WHERE id = ?").bind(m[1]).first();
     if (!f) throw fehler(404, "Fahrzeug nicht gefunden.");

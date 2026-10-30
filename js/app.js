@@ -247,7 +247,7 @@
     );
 
     $("#status-filter").innerHTML = Object.entries(FMS)
-      .map(([n, s]) => `<button type="button" class="chip" data-status="${n}" aria-pressed="true" title="${esc(s.text)}"><span class="dot" style="background:${s.farbe}"></span>${n} ${esc(s.text)}</button>`)
+      .map(([n, s]) => `<button type="button" class="chip" data-status="${n}" aria-pressed="true" title="${esc(s.text)}"><span class="dot" style="background:${s.farbe}"></span>${n} ${esc(s.kurz || s.text)}</button>`)
       .join("");
     $("#status-filter").addEventListener("click", (e) => {
       const chip = e.target.closest(".chip");

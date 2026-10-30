@@ -37,7 +37,7 @@ Alarmierung als quittiert, bis dahin steht beim Fahrzeug *wartet*. Der
 Disponent kann nachalarmieren, Alarme zurücknehmen und Einsätze abschließen.
 
 **Mein Fahrzeug**: Wer als FzF oder Besatzung eingeteilt ist, sieht oben sein
-Fahrzeug mit großen Status-Buttons 1–8 und dem aktuellen Alarm („Einsatzdaten
+Fahrzeug mit großen Status-Buttons 0–9 und dem aktuellen Alarm („Einsatzdaten
 übernehmen“ füllt Einsatztext und Position vor). Auf dem Handy ganz oben.
 
 **ER:LC live** (optional, mit `PRC_SERVER_KEY`): Alle Spieler im Team *Fire*
@@ -182,13 +182,15 @@ alle 15 Sekunden neu.
 | `id` | eindeutige Kennung, frei wählbar |
 | `rufname`, `typ` | Anzeige in Liste und Karte |
 | `wache` | `FW1`, `FW2` oder `FW3` (siehe `data/wachen.json`) |
-| `status` | FMS-Status 1–8 |
+| `status` | FMS-Status 0–9 |
 | `position` | optional – ohne Position steht das Fahrzeug auf seiner Wache |
 | `einsatz` | optional – kurzer Einsatztext |
 
-**FMS-Status:** 1 Einsatzbereit über Funk · 2 Einsatzbereit auf Wache ·
-3 Einsatz übernommen · 4 Am Einsatzort · 5 Sprechwunsch ·
-6 Nicht einsatzbereit · 7 Patient aufgenommen · 8 Am Transportziel
+**FMS-Status:** 0 Dringender Sprechwunsch · 1 Einsatzbereit über Funk ·
+2 Einsatzbereit auf Wache · 3 Einsatzauftrag übernommen · 4 Am Einsatzziel
+eingetroffen · 5 Sprechwunsch · 6 Befristete Außerdienststellung · 7 Mit einem
+Patienten auf dem Weg ins Krankenhaus · 8 Mit einem Patienten im Krankenhaus
+eingetroffen · 9 Anmeldung bei Fremdleitstelle
 
 **Koordinaten finden:** Auf der Karte oben rechts **Koordinaten** anklicken,
 dann auf die gewünschte Stelle klicken und den Wert kopieren.

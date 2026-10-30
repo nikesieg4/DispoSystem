@@ -35,12 +35,14 @@ window.DISPO_CONFIG = {
 
 // FMS-Status (Funkmeldesystem)
 window.FMS_STATUS = {
+  0: { text: "Dringender Sprechwunsch", kurz: "Dringend", farbe: "#E5489C" },
   1: { text: "Einsatzbereit über Funk", kurz: "Frei Funk", farbe: "#3E9BF0" },
   2: { text: "Einsatzbereit auf Wache", kurz: "Wache", farbe: "#30A46C" },
-  3: { text: "Einsatz übernommen", kurz: "Übernommen", farbe: "#F5A524" },
-  4: { text: "Am Einsatzort", kurz: "Einsatzort", farbe: "#E5484D" },
+  3: { text: "Einsatzauftrag übernommen", kurz: "Auftrag", farbe: "#F5A524" },
+  4: { text: "Am Einsatzziel eingetroffen", kurz: "Einsatzziel", farbe: "#E5484D" },
   5: { text: "Sprechwunsch", kurz: "Sprechw.", farbe: "#B77CF2" },
-  6: { text: "Nicht einsatzbereit", kurz: "Nicht bereit", farbe: "#7C838D" },
-  7: { text: "Patient aufgenommen", kurz: "Patient", farbe: "#12A594" },
-  8: { text: "Am Transportziel", kurz: "Ziel", farbe: "#6E79D6" },
+  6: { text: "Befristete Außerdienststellung", kurz: "Außer Dienst", farbe: "#7C838D" },
+  7: { text: "Mit einem Patienten auf dem Weg ins Krankenhaus", kurz: "Transport", farbe: "#12A594" },
+  8: { text: "Mit einem Patienten im Krankenhaus eingetroffen", kurz: "Im KH", farbe: "#6E79D6" },
+  9: { text: "Anmeldung bei Fremdleitstelle", kurz: "Fremd‑LS", farbe: "#C9A27E" },
 };

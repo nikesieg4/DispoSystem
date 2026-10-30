@@ -259,10 +259,10 @@ textarea { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line);
 .mein-alarm { background: rgba(229,72,77,.15); border: 1px solid var(--accent); border-radius: 8px; padding: 10px; font-size: 13px; }
 .mein-alarm b { color: #FF8E8E; }
 .mein-alarm .btn-primary { margin-top: 8px; width: 100%; }
-.mein-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.mein-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
 .mein-grid button { min-height: 48px; border-radius: 8px; border: 2px solid var(--line); background: var(--panel-2);
   color: var(--text); font-weight: 800; font-size: 18px; display: grid; place-items: center; line-height: 1.1; }
-.mein-grid button span { font-size: 9px; font-weight: 600; color: var(--muted); }
+.mein-grid button span { font-size: 9px; font-weight: 600; color: var(--muted); text-align: center; }
 .mein-grid button[aria-pressed="true"] { border-color: var(--c); background: color-mix(in srgb, var(--c) 25%, var(--panel-2)); }
 .mein-grid button:disabled { opacity: .6; }
 
