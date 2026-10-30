@@ -671,6 +671,7 @@
     spielerLayer.addTo(map);
     notrufLayer.addTo(map);
     await ladeLive();
+    if (live && live.aktiv) zeigeHinweis();
     if (live && live.aktiv) setInterval(() => !document.hidden && ladeLive(), (cfg.liveSeconds || 5) * 1000);
   }
 
@@ -745,6 +746,15 @@
     const px = umrechnung.cx + umrechnung.s * x;
     const py = umrechnung.cz + umrechnung.s * z;
     return [-py / KARTE, px / KARTE];
+  }
+
+  function zeigeHinweis() {
+    const u = umrechnung;
+    const spieler = live.server && live.server.spieler != null ? `${live.server.spieler} Spieler online. ` : "";
+    $("#hinweis-stand").textContent = spieler + (u && u.punkte
+      ? `Die Karte ist aktuell über ${u.punkte} Orte kalibriert.`
+      : "Die Karte ist noch nicht kalibriert – Positionen erscheinen, sobald genug Daten da sind.");
+    $("#hinweis-dialog").showModal();
   }
 
   function renderLive() {

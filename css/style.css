@@ -247,6 +247,9 @@ textarea { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line);
 .notruf .grow { min-width: 0; }
 .notruf .btn-ghost { min-height: 30px; font-size: 12px; white-space: nowrap; }
 
+.hinweis-liste { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
+#hinweis-dialog p { margin: 0; }
+
 /* Mein Fahrzeug */
 .mein { grid-area: mein; background: var(--panel); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
   padding: 12px; display: grid; gap: 10px; }

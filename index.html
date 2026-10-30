@@ -204,6 +204,22 @@
     <datalist id="cd-optionen"></datalist>
   </dialog>
 
+  <!-- Hinweis zu ER:LC-Positionen, bei jedem Öffnen -->
+  <dialog id="hinweis-dialog" class="dialog" aria-labelledby="hinweis-title">
+    <form method="dialog" class="form">
+      <h2 id="hinweis-title">Hinweis: Positionen können ungenau sein</h2>
+      <p>Die Positionen von <b>Spielern</b> und <b>Notrufen</b> aus ER:LC werden automatisch auf die Karte umgerechnet. Diese Umrechnung lernt aus den Spielern auf dem Server und kann deshalb <b>ungenau</b> sein.</p>
+      <ul class="hinweis-liste">
+        <li><b>Wenig Spieler online?</b> Dann den Einsatzort bitte zusätzlich im Spiel oder über Funk prüfen – Straße und Postleitzahl stehen im Popup des Markers.</li>
+        <li><b>Je mehr Spieler online sind</b> und je mehr Orte sie besuchen, desto genauer werden die Positionen.</li>
+      </ul>
+      <p id="hinweis-stand" class="muted small"></p>
+      <div class="row end">
+        <button type="submit" class="btn-primary">Verstanden</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Einsatz anlegen / bearbeiten -->
   <dialog id="ez-dialog" class="dialog" aria-labelledby="ez-title">
     <form method="dialog" class="form">
