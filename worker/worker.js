@@ -33,6 +33,7 @@ const LIVE_CACHE_MS = 5000;          // ER:LC-API höchstens alle 5 s abfragen
 const KALIBRIERUNG_INTERVALL_MS = 60 * 1000;
 const EINSATZ_NACHLAUF_STUNDEN = 6;  // abgeschlossene Einsätze so lange anzeigen
 const MAX_BESATZUNG = 12;
+const DURCHSAGE_STUNDEN = 2;         // Durchsagen so lange mitschicken
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS fahrzeuge (
@@ -65,6 +66,13 @@ const SCHEMA = [
      einsatz_id INTEGER NOT NULL, fahrzeug_id TEXT NOT NULL, alarmiert_am TEXT NOT NULL,
      alarmiert_von TEXT, quittiert_am TEXT, PRIMARY KEY (einsatz_id, fahrzeug_id))`,
   // Mittlere Spielerposition pro Postleitzahl – daraus rechnet die Karte ER:LC-Koordinaten um
+  // Durchsagen der Leitstelle an die Fahrzeuge (wache = null: an alle)
+  `CREATE TABLE IF NOT EXISTS durchsagen (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, wache TEXT,
+     von_id TEXT NOT NULL, von_name TEXT NOT NULL, erstellt_am TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS durchsagen_gelesen (
+     durchsage_id INTEGER NOT NULL, user_id TEXT NOT NULL, name TEXT NOT NULL, am TEXT NOT NULL,
+     PRIMARY KEY (durchsage_id, user_id))`,
   `CREATE TABLE IF NOT EXISTS kalibrierung (
      postal TEXT PRIMARY KEY, sum_x REAL NOT NULL, sum_z REAL NOT NULL, n REAL NOT NULL)`,
 ];
@@ -131,7 +139,30 @@ async function route(request, env, ctx) {
       fahrzeuge: results.map(ausDb),
       einsaetze: await einsatzListe(env),
       leitstelle: await dienstListe(env, "leitstelle"),
+      durchsagen: await durchsageListe(env),
     });
+  }
+
+  if (pfad === "/api/durchsagen" && methode === "POST") {
+    darfDisponieren(ich);
+    const b = await request.json();
+    const inhalt = text(b.text, 300);
+    if (!inhalt) throw fehler(400, "Text der Durchsage fehlt.");
+    const wache = b.wache ? text(b.wache, 20) : null;
+    const r = await env.DB.prepare(
+      "INSERT INTO durchsagen (text, wache, von_id, von_name, erstellt_am) VALUES (?, ?, ?, ?, ?)"
+    ).bind(inhalt, wache, ich.id, ich.name, jetzt()).run();
+    await protokoll(env, ich, "durchsage", `Durchsage${wache ? " an " + wache : ""}: ${inhalt}`).run();
+    return json({ ok: true, id: r.meta.last_row_id });
+  }
+
+  let m = pfad.match(/^\/api\/durchsagen\/(\d{1,10})\/gelesen$/);
+  if (m && methode === "POST") {
+    await env.DB.prepare(
+      `INSERT OR IGNORE INTO durchsagen_gelesen (durchsage_id, user_id, name, am)
+       SELECT id, ?, ?, ? FROM durchsagen WHERE id = ?`
+    ).bind(ich.id, ich.name, jetzt(), Number(m[1])).run();
+    return json({ ok: true });
   }
 
   if (pfad === "/api/live" && methode === "GET") {
@@ -159,7 +190,7 @@ async function route(request, env, ctx) {
     return json({ ok: true, id });
   }
 
-  let m = pfad.match(/^\/api\/einsaetze\/(\d{1,10})(\/alarm|\/abschluss)?$/);
+  m = pfad.match(/^\/api\/einsaetze\/(\d{1,10})(\/alarm|\/abschluss)?$/);
   if (m) {
     darfDisponieren(ich);
     const id = Number(m[1]);
@@ -421,7 +452,7 @@ function darfVerwalten(ich) {
 }
 
 function darfDisponieren(ich) {
-  if (!ich.disponent) throw fehler(403, "Einsätze anlegen und alarmieren kann nur die Leitstelle (Leitstellen Disponent).");
+  if (!ich.disponent) throw fehler(403, "Einsätze, Alarmierungen und Durchsagen kann nur die Leitstelle (Leitstellen Disponent).");
   if (!ich.leitstelleImDienst) throw fehler(403, "Melde dich zuerst in der Leitstelle in den Dienst.");
 }
 
@@ -517,6 +548,23 @@ async function einsatzListe(env) {
       fahrzeugId: y.fahrzeug_id, alarmiertAm: y.alarmiert_am, alarmiertVon: y.alarmiert_von,
       quittiertAm: y.quittiert_am || undefined,
     })),
+  }));
+}
+
+// ---------- Durchsagen ----------
+
+async function durchsageListe(env) {
+  const grenze = new Date(Date.now() - DURCHSAGE_STUNDEN * 3600 * 1000).toISOString();
+  const [d, g] = await env.DB.batch([
+    env.DB.prepare("SELECT * FROM durchsagen WHERE erstellt_am >= ? ORDER BY id DESC LIMIT 30").bind(grenze),
+    env.DB.prepare(
+      `SELECT g.* FROM durchsagen_gelesen g JOIN durchsagen d ON d.id = g.durchsage_id
+       WHERE d.erstellt_am >= ? ORDER BY g.am`
+    ).bind(grenze),
+  ]);
+  return d.results.map((x) => ({
+    id: x.id, text: x.text, wache: x.wache || undefined, von: x.von_name, vonId: x.von_id, erstelltAm: x.erstellt_am,
+    gelesen: g.results.filter((y) => y.durchsage_id === x.id).map((y) => ({ userId: y.user_id, name: y.name, am: y.am })),
   }));
 }
 

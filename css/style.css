@@ -309,6 +309,16 @@ textarea { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line);
 .akt-log time { color: var(--muted); margin-right: 6px; }
 .akt-log b { font-weight: 600; }
 
+/* Durchsagen */
+.dialog-durchsage { border: 2px solid #3E9BF0; box-shadow: 0 0 0 6px rgba(62,155,240,.25); }
+.dialog-durchsage h2 { color: #7CC0FF; }
+.ds-anzeige { display: grid; gap: 8px; }
+.ds-eintrag { background: var(--panel-2); border-left: 4px solid #3E9BF0; border-radius: 8px; padding: 10px 12px; }
+.ds-eintrag .ds-text { font-size: 16px; font-weight: 600; white-space: pre-wrap; overflow-wrap: break-word; margin: 0 0 4px; }
+.ds-eintrag p { margin: 0; }
+#ds-liste .ds-eintrag { margin-bottom: 8px; }
+#ds-liste .ds-text { font-size: 13px; }
+
 /* Status-Dialog */
 .dialog {
   width: min(480px, calc(100vw - 32px)); padding: 20px; border-radius: 12px;

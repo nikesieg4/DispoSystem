@@ -41,6 +41,13 @@ Leitstelle besetzt ist. Disponenten im Dienst bekommen bei **Status 0** ein
 Popup mit Warnton, bei **Status 5** eine Meldung am Rand; die Seite
 aktualisiert sich für sie alle 5 Sekunden.
 
+**Durchsagen**: Disponenten im Dienst schicken mit **📢 Durchsage** eine
+Nachricht an alle Fahrzeuge oder nur an eine Wache. Wer gerade als FzF oder
+Besatzung auf einem passenden Fahrzeug eingeteilt ist, bekommt sie als Popup
+mit Gong (bis 30 Minuten nach dem Senden) und bestätigt mit *Verstanden*. Unter
+*Einsätze → Durchsagen* sehen Leitstelle, Wachleiter und Höherer Dienst die
+Durchsagen der letzten 2 Stunden und wer sie gelesen hat.
+
 **Mein Fahrzeug**: Wer als FzF oder Besatzung eingeteilt ist, sieht oben sein
 Fahrzeug mit großen Status-Buttons 0–9 und dem aktuellen Alarm („Einsatzdaten
 übernehmen“ füllt Einsatztext und Position vor). Auf dem Handy ganz oben.

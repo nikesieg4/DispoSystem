@@ -200,6 +200,15 @@
       fahrzeuge = data.fahrzeuge || [];
       einsaetze = data.einsaetze || [];
       leitstelle = data.leitstelle || [];
+      durchsagen = data.durchsagen || [];
+      // Dienst auch serverseitig beendet (automatisch oder anderes Fenster)?
+      if (rechte && rechte.disponent && meId) {
+        const an = leitstelle.some((d) => d.userId === meId);
+        if (an !== rechte.leitstelleImDienst) {
+          rechte = { ...rechte, leitstelleImDienst: an, disponieren: an };
+          planeRefresh();
+        }
+      }
       $("#stand").textContent = "Stand: " + new Date(data.stand || Date.now()).toLocaleString("de-DE");
     } catch (e) {
       $("#stand").textContent = "Fahrzeugdaten konnten nicht geladen werden";
@@ -211,7 +220,9 @@
       renderLeitstelle();
       renderEinsaetze();
       renderMeinFahrzeug();
+      renderDurchsagen();
       pruefeMeldungen();
+      pruefeDurchsagen();
     }
     if (rechte && rechte.verwaltung) renderVerwaltungListe();
   }
@@ -498,6 +509,7 @@
     $("#tab-btn-einsaetze").hidden = false;
     $("#ez-neu").hidden = !darfDispo();
     initLeitstelle();
+    initDurchsagen();
     einsatzLayer.addTo(map);
 
     $("#ez-neu").addEventListener("click", () => openEinsatzDialog(null));
@@ -768,6 +780,108 @@
           <button type="button" class="btn-ghost" data-karte="${esc(f.id)}">Auf Karte</button></div>
         <button type="button" class="x" data-weg="${esc(key)}" aria-label="Meldung schließen">✕</button>`;
       $("#toasts").appendChild(t);
+    }
+  }
+
+  // ---------- Durchsagen der Leitstelle ----------
+
+  let durchsagen = [];
+  const DURCHSAGE_ANZEIGE_MIN = 30;  // so lange bekommt man eine Durchsage noch als Popup
+  const gelesenLokal = new Set();
+  let angezeigt = [];
+
+  const durchsageAn = (d) => (d.wache ? (wachen[d.wache] ? wachen[d.wache].name : d.wache) : "Alle Fahrzeuge");
+
+  function initDurchsagen() {
+    $("#ds-wache").innerHTML = '<option value="">Alle Fahrzeuge</option>' + Object.values(wachen)
+      .filter((w) => w.typ === "wache")
+      .map((w) => `<option value="${esc(w.id)}">Nur ${esc(w.name)}</option>`).join("");
+    $("#ds-neu").addEventListener("click", () => {
+      $("#ds-text").value = "";
+      $("#ds-wache").value = "";
+      $("#ds-error").hidden = true;
+      $("#ds-neu-dialog").showModal();
+    });
+    $("#ds-cancel").addEventListener("click", () => $("#ds-neu-dialog").close());
+    $("#ds-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("#ds-senden").disabled = true;
+      try {
+        await DispoAuth.api("/api/durchsagen", {
+          method: "POST",
+          body: { text: $("#ds-text").value, wache: $("#ds-wache").value || null },
+        });
+        $("#ds-neu-dialog").close();
+        await refresh();
+      } catch (err) {
+        zeigeFehler("#ds-error", err);
+      } finally {
+        $("#ds-senden").disabled = false;
+      }
+    });
+    $("#ds-dialog").addEventListener("close", () => {
+      for (const d of angezeigt) {
+        gelesenLokal.add(d.id);
+        DispoAuth.api(`/api/durchsagen/${d.id}/gelesen`, { method: "POST", body: {} }).catch(() => {});
+      }
+      angezeigt = [];
+    });
+  }
+
+  // Liste für die Leitstelle: was wurde durchgesagt und wer hat es gelesen
+  function renderDurchsagen() {
+    const sichtbar = Boolean(rechte && (rechte.disponent || rechte.verwaltung));
+    $("#ds-neu").hidden = !darfDispo();
+    $("#ds-box").hidden = !sichtbar || !durchsagen.length;
+    if (!sichtbar) return;
+    $("#ds-summary").textContent = `Durchsagen (letzte 2 Std.) · ${durchsagen.length}`;
+    $("#ds-liste").innerHTML = durchsagen.map((d) => `<div class="ds-eintrag">
+        <p class="ds-text">${esc(d.text)}</p>
+        <p class="muted small">${fmtUhr(d.erstelltAm)} · ${esc(d.von)} → ${esc(durchsageAn(d))}</p>
+        <p class="small">${d.gelesen.length
+          ? `Gelesen (${d.gelesen.length}): ${d.gelesen.map((g) => esc(g.name)).join(", ")}`
+          : '<span class="muted">Noch von niemandem gelesen</span>'}</p>
+      </div>`).join("");
+  }
+
+  // Popup für alle, die auf einem Fahrzeug eingeteilt sind (FzF und Besatzung)
+  function pruefeDurchsagen() {
+    if (!meinFahrzeug || $("#ds-dialog").open || $("#hinweis-dialog").open) return;
+    const grenze = Date.now() - DURCHSAGE_ANZEIGE_MIN * 60 * 1000;
+    const neu = durchsagen.filter((d) =>
+      (!d.wache || d.wache === meinFahrzeug.wache) &&
+      Date.parse(d.erstelltAm) >= grenze &&
+      d.vonId !== meId &&
+      !gelesenLokal.has(d.id) &&
+      !d.gelesen.some((g) => g.userId === meId));
+    if (!neu.length) return;
+    angezeigt = neu;
+    $("#ds-anzeige").innerHTML = neu.map((d) => `<div class="ds-eintrag">
+        <p class="ds-text">${esc(d.text)}</p>
+        <p class="muted small">${fmtUhr(d.erstelltAm)} · ${esc(d.von)} · an ${esc(durchsageAn(d))}</p>
+      </div>`).join("");
+    $("#ds-dialog").showModal();
+    gong();
+  }
+
+  // Zweiklang wie ein Durchsage-Gong
+  function gong() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [[0, 784], [0.45, 587]].forEach(([t, hz]) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = hz;
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+        g.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + t + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.9);
+        o.connect(g).connect(ctx.destination);
+        o.start(ctx.currentTime + t);
+        o.stop(ctx.currentTime + t + 1);
+      });
+    } catch {
+      /* kein Ton möglich */
     }
   }
 

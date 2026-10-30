@@ -82,7 +82,10 @@
           <p id="ls-besetzt" class="small"></p>
           <div id="ls-dienst" hidden>
             <p id="ls-text" class="muted small"></p>
-            <button id="ls-btn" type="button" class="btn-ghost"></button>
+            <div class="row">
+              <button id="ls-btn" type="button" class="btn-ghost"></button>
+              <button id="ds-neu" type="button" class="btn-ghost" hidden>📢 Durchsage</button>
+            </div>
           </div>
         </section>
 
@@ -95,6 +98,11 @@
 
         <h2 class="sec-title">Laufende Einsätze</h2>
         <div id="ez-liste"></div>
+
+        <details id="ds-box" class="ez-alt" hidden>
+          <summary id="ds-summary">Durchsagen (letzte 2 Std.)</summary>
+          <div id="ds-liste"></div>
+        </details>
 
         <details class="ez-alt">
           <summary>Abgeschlossen (letzte 6 Std.)</summary>
@@ -221,6 +229,36 @@
       <div id="s0-liste" class="s0-liste"></div>
       <div class="row end">
         <button type="submit" class="btn-primary">Quittieren</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Durchsage der Leitstelle (für alle, die auf einem Fahrzeug eingeteilt sind) -->
+  <dialog id="ds-dialog" class="dialog dialog-durchsage" aria-labelledby="ds-title">
+    <form method="dialog" class="form">
+      <h2 id="ds-title">📢 Durchsage der Leitstelle</h2>
+      <div id="ds-anzeige" class="ds-anzeige"></div>
+      <div class="row end">
+        <button type="submit" class="btn-primary">Verstanden</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Neue Durchsage (Leitstelle im Dienst) -->
+  <dialog id="ds-neu-dialog" class="dialog" aria-labelledby="dsn-title">
+    <form id="ds-form" method="dialog" class="form">
+      <h2 id="dsn-title">📢 Neue Durchsage</h2>
+      <p class="muted small">Erscheint sofort als Popup bei allen, die auf einem Fahrzeug eingeteilt sind (Fahrzeugführer und Besatzung).</p>
+      <label class="field">An
+        <select id="ds-wache"></select>
+      </label>
+      <label class="field">Text
+        <textarea id="ds-text" maxlength="300" rows="3" required placeholder="z. B. Alle Fahrzeuge: Highway Höhe Farmlands wegen VU gesperrt, bitte umfahren."></textarea>
+      </label>
+      <p id="ds-error" class="error" role="alert" hidden></p>
+      <div class="row end">
+        <button id="ds-cancel" type="button" class="btn-ghost">Abbrechen</button>
+        <button id="ds-senden" type="submit" class="btn-primary">Durchsage senden</button>
       </div>
     </form>
   </dialog>
