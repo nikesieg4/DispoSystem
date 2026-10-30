@@ -723,7 +723,7 @@
     info.className = "live-info small";
     if (live.fehler) {
       info.classList.add("warn");
-      info.textContent = "ER:LC: " + live.fehler;
+      info.textContent = live.fehler.startsWith("ER:LC") ? live.fehler : "ER:LC: " + live.fehler;
     } else if (!umrechnung || !umrechnung.s) {
       info.classList.add("warn");
       info.textContent = `ER:LC: ${live.server.feuerwehr} Feuerwehr · Karte wird kalibriert (noch ${umrechnung ? umrechnung.fehlt : "?"} Postleitzahl(en))`;

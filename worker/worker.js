@@ -529,13 +529,21 @@ async function live(env, ctx) {
     return liveCache.daten || { aktiv: true, fehler: "ER:LC-API macht gerade eine Pause (Rate-Limit)." };
   }
   if (!r.ok) {
-    // Wiederholte Fehlanfragen führen bei PRC zu Sperren – daher länger warten
-    liveCache.pauseBis = nun + 5 * 60 * 1000;
+    const { code } = await r.json().catch(() => ({}));
+    const [text, pauseSek] = PRC_FEHLER[code] || [`ER:LC-API Fehler ${r.status}${code != null ? ` (Code ${code})` : ""}.`, 300];
+    // Wiederholte Fehlanfragen führen bei PRC zu Sperren – daher je nach Fehler warten
+    liveCache.pauseBis = nun + pauseSek * 1000;
     const daten = {
       aktiv: true,
-      fehler: r.status === 403 ? "Server-Key ungültig – PRC_SERVER_KEY bei Cloudflare prüfen." : `ER:LC-API Fehler ${r.status}.`,
+      fehler: text,
+      offline: code === 3002 || undefined,
+      server: code === 3002 ? { spieler: 0, feuerwehr: 0 } : undefined,
+      spieler: [],
+      notrufe: [],
+      kalibrierung: await kalibrierungLesen(env),
     };
     liveCache.daten = daten;
+    liveCache.bis = liveCache.pauseBis;
     return daten;
   }
   if (r.headers.get("X-RateLimit-Remaining") === "0") {
@@ -585,6 +593,19 @@ async function live(env, ctx) {
   liveCache.bis = nun + LIVE_CACHE_MS;
   return daten;
 }
+
+// Fehlercodes der ER:LC-API (apidocs.erlc.gg/error-codes) → Meldung, Pause in Sekunden
+const PRC_FEHLER = {
+  1001: ["ER:LC: Verbindung zum Spielserver gestört – neuer Versuch gleich.", 30],
+  1002: ["ER:LC-API hat einen internen Fehler – neuer Versuch gleich.", 60],
+  2000: ["Server-Key fehlt – PRC_SERVER_KEY bei Cloudflare eintragen.", 600],
+  2001: ["Server-Key hat ein falsches Format – PRC_SERVER_KEY prüfen.", 600],
+  2002: ["Server-Key ungültig oder abgelaufen – PRC_SERVER_KEY prüfen.", 600],
+  2004: ["Server-Key ist von der ER:LC-API gesperrt.", 1800],
+  3002: ["ER:LC-Server ist offline (keine Spieler).", 60],
+  4000: ["Keine Berechtigung für diesen ER:LC-Server.", 600],
+  9999: ["ER:LC-Modul auf dem Server ist veraltet – alle Spieler kicken, dann geht es wieder.", 120],
+};
 
 // Position kann [x, z], [x, y, z] oder ein Objekt sein
 function spielPosition(p) {
