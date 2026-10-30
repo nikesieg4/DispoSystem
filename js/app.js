@@ -687,27 +687,57 @@
   }
 
   // Bestimmt Maßstab und Mittelpunkt aus der mittleren Spielerposition je
-  // Postleitzahl und der Lage der Postleitzahlen auf der Karte (gewichtete
-  // lineare Regression, gleicher Maßstab für X und Z).
+  // Postleitzahl und der Lage der Postleitzahlen auf der Karte (lineare
+  // Regression, gleicher Maßstab für X und Z). Jede Postleitzahl zählt gleich
+  // viel – sonst zieht ein Spieler, der lange an einer Stelle steht, alles zu
+  // sich –, und Ausreißer werden aussortiert.
+  const KALIB_MIN_PUNKTE = 4;
+  const KALIB_MIN_STREUUNG = 500; // Pixel: Orte müssen über die Karte verteilt sein
+
   function kalibrieren(werte) {
-    const pkt = werte
+    let pkt = werte
       .filter((w) => postleitzahlen[w.postal] && Number.isFinite(w.x) && Number.isFinite(w.z))
       .map((w) => {
         const [lat, lng] = postleitzahlen[w.postal];
-        return { X: w.x, Z: w.z, P: lng * KARTE, Q: -lat * KARTE, g: Math.sqrt(w.n) };
+        return { X: w.x, Z: w.z, P: lng * KARTE, Q: -lat * KARTE };
       });
-    if (pkt.length < 4) return { fehlt: 4 - pkt.length };
-    const G = pkt.reduce((s, p) => s + p.g, 0);
-    const mw = (k) => pkt.reduce((s, p) => s + p.g * p[k], 0) / G;
+    if (pkt.length < KALIB_MIN_PUNKTE) return { fehlt: KALIB_MIN_PUNKTE - pkt.length };
+
+    // Ausreißer: jeden Ort gegen eine Umrechnung ohne ihn prüfen (leave-one-out)
+    // und den schlimmsten entfernen, solange er deutlich aus der Reihe fällt.
+    for (let runde = 0; runde < 3 && pkt.length > KALIB_MIN_PUNKTE; runde++) {
+      const abw = pkt.map((p, i) => {
+        const ohne = regression(pkt.filter((_, j) => j !== i));
+        return ohne ? Math.hypot(ohne.cx + ohne.s * p.X - p.P, ohne.cz + ohne.s * p.Z - p.Q) : 0;
+      });
+      const schlimmster = abw.indexOf(Math.max(...abw));
+      const ohne = pkt.filter((_, i) => i !== schlimmster);
+      const fitOhne = regression(ohne);
+      // Nur entfernen, wenn der Rest ohne ihn gut zusammenpasst und er klar danebenliegt
+      if (!fitOhne || abw[schlimmster] <= Math.max(3 * fitOhne.fehler, 150)) break;
+      pkt = ohne;
+    }
+    const fit = regression(pkt);
+    if (!fit) return { fehlt: 1 };
+    if (fit.streuung < KALIB_MIN_STREUUNG) return { fehlt: 1, streuung: true };
+    return fit;
+  }
+
+  function regression(pkt) {
+    const n = pkt.length;
+    const mw = (k) => pkt.reduce((s, p) => s + p[k], 0) / n;
     const [mX, mZ, mP, mQ] = ["X", "Z", "P", "Q"].map(mw);
-    let zaehler = 0, nenner = 0;
+    let zaehler = 0, nenner = 0, streuung = 0;
     for (const p of pkt) {
-      zaehler += p.g * ((p.X - mX) * (p.P - mP) + (p.Z - mZ) * (p.Q - mQ));
-      nenner += p.g * ((p.X - mX) ** 2 + (p.Z - mZ) ** 2);
+      zaehler += (p.X - mX) * (p.P - mP) + (p.Z - mZ) * (p.Q - mQ);
+      nenner += (p.X - mX) ** 2 + (p.Z - mZ) ** 2;
+      streuung += (p.P - mP) ** 2 + (p.Q - mQ) ** 2;
     }
     const s = zaehler / nenner;
-    if (!(s > 0) || !Number.isFinite(s)) return { fehlt: 1 };
-    return { s, cx: mP - s * mX, cz: mQ - s * mZ, punkte: pkt.length };
+    if (!(s > 0) || !Number.isFinite(s)) return null;
+    const cx = mP - s * mX, cz = mQ - s * mZ;
+    const fehler = Math.sqrt(pkt.reduce((t, p) => t + (cx + s * p.X - p.P) ** 2 + (cz + s * p.Z - p.Q) ** 2, 0) / n);
+    return { s, cx, cz, punkte: n, streuung: Math.sqrt(streuung / n), fehler };
   }
 
   function spielZuKarte(x, z) {
@@ -727,10 +757,14 @@
     } else if (!umrechnung || !umrechnung.s) {
       info.classList.add("warn");
       const anzahl = live.server.spieler != null ? `${live.server.spieler} Spieler · ` : "";
-      info.textContent = `ER:LC: ${anzahl}${live.server.feuerwehr} Feuerwehr · Karte wird kalibriert (noch ${umrechnung ? umrechnung.fehlt : "?"} Postleitzahl(en))`;
+      const rest = !umrechnung ? "" : umrechnung.streuung
+        ? " (Spieler an weiter entfernten Orten nötig)"
+        : ` (noch ${umrechnung.fehlt} Postleitzahl(en))`;
+      info.textContent = `ER:LC: ${anzahl}${live.server.feuerwehr} Feuerwehr · Karte wird kalibriert${rest}`;
     } else {
       info.classList.add("ok");
       info.textContent = `ER:LC: ${live.server.spieler}${live.server.max ? "/" + live.server.max : ""} Spieler · ${live.server.feuerwehr} Feuerwehr`;
+      if (umrechnung.punkte) info.title = `Kalibriert über ${umrechnung.punkte} Postleitzahlen, mittlere Abweichung ca. ${Math.round(umrechnung.fehler)} px`;
     }
 
     spielerLayer.clearLayers();
