@@ -726,7 +726,8 @@
       info.textContent = live.fehler.startsWith("ER:LC") ? live.fehler : "ER:LC: " + live.fehler;
     } else if (!umrechnung || !umrechnung.s) {
       info.classList.add("warn");
-      info.textContent = `ER:LC: ${live.server.feuerwehr} Feuerwehr · Karte wird kalibriert (noch ${umrechnung ? umrechnung.fehlt : "?"} Postleitzahl(en))`;
+      const anzahl = live.server.spieler != null ? `${live.server.spieler} Spieler · ` : "";
+      info.textContent = `ER:LC: ${anzahl}${live.server.feuerwehr} Feuerwehr · Karte wird kalibriert (noch ${umrechnung ? umrechnung.fehlt : "?"} Postleitzahl(en))`;
     } else {
       info.classList.add("ok");
       info.textContent = `ER:LC: ${live.server.spieler}${live.server.max ? "/" + live.server.max : ""} Spieler · ${live.server.feuerwehr} Feuerwehr`;
