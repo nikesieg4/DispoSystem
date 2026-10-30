@@ -518,7 +518,7 @@ async function live(env, ctx) {
   let r;
   try {
     r = await fetch(PRC + "/server?Players=true&EmergencyCalls=true", {
-      headers: { "server-key": env.PRC_SERVER_KEY, Accept: "application/json" },
+      headers: { "server-key": prcKey(env), Accept: "application/json" },
     });
   } catch {
     liveCache.pauseBis = nun + 30 * 1000;
@@ -606,6 +606,11 @@ const PRC_FEHLER = {
   4000: ["Keine Berechtigung für diesen ER:LC-Server.", 600],
   9999: ["ER:LC-Modul auf dem Server ist veraltet – alle Spieler kicken, dann geht es wieder.", 120],
 };
+
+// Beim Kopieren rutschen gern Leerzeichen, Zeilenumbrüche oder Anführungszeichen mit
+function prcKey(env) {
+  return String(env.PRC_SERVER_KEY).trim().replace(/^["'`]+|["'`]+$/g, "").trim();
+}
 
 // Position kann [x, z], [x, y, z] oder ein Objekt sein
 function spielPosition(p) {
