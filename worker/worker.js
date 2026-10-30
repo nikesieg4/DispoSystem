@@ -6,6 +6,7 @@
 //   • Wachleiter im Dienst → zusätzlich Fahrzeuge verwalten
 //   • Höherer Dienst       → Fahrzeuge verwalten (immer)
 //   • Wachleiter & Höherer Dienst sehen die Aktivitäts-Auswertung
+//   • Leitstellen-Disponent → Einsätze anlegen, Fahrzeuge alarmieren
 //
 // Einstellungen (Cloudflare → Worker → Settings → Variables):
 //   BOT_TOKEN        (Secret!) Token des Discord-Bots
@@ -14,16 +15,23 @@
 //   ROLLEN_HOEHERER_DIENST  Rollennamen oder -IDs, mit Komma getrennt
 //   ROLLEN_WACHLEITER       Rollennamen oder -IDs, mit Komma getrennt
 //   ROLLEN_FZF              Rollen, die als Fahrzeugführer wählbar sind
+//   ROLLEN_DISPONENT        Rollen, die Einsätze anlegen dürfen
+//   PRC_SERVER_KEY   (Secret, optional) Server-Key der ER:LC-API für Live-Daten
 // Für die Besatzungsauswahl muss beim Bot der "Server Members Intent" an sein.
 // Bindung: D1-Datenbank unter dem Namen DB.
 
 let DISCORD = "https://discord.com/api/v10";
+let PRC = "https://api.erlc.gg/v2";
 const DIENST_MAX_STUNDEN = 12;
 
 const STANDARD_HOEHERER_DIENST =
   "Brandreferendar,Brandrat,Brandoberrat,Branddirektor,Abteilungsleiter EB,Abteilungsleiter Einsatzbetrieb,Stv. Kreisbranddirektor,Kreisbranddirektor";
 const STANDARD_WACHLEITER = "Wachleiter";
 const STANDARD_FZF = "Fahrzeugführer";
+const STANDARD_DISPONENT = "Leitstellen Disponent";
+const LIVE_CACHE_MS = 5000;          // ER:LC-API höchstens alle 5 s abfragen
+const KALIBRIERUNG_INTERVALL_MS = 60 * 1000;
+const EINSATZ_NACHLAUF_STUNDEN = 6;  // abgeschlossene Einsätze so lange anzeigen
 const MAX_BESATZUNG = 12;
 
 const SCHEMA = [
@@ -47,6 +55,16 @@ const SCHEMA = [
      id INTEGER PRIMARY KEY AUTOINCREMENT, zeit TEXT NOT NULL, user_id TEXT NOT NULL, name TEXT NOT NULL,
      aktion TEXT NOT NULL, details TEXT)`,
   "CREATE INDEX IF NOT EXISTS protokoll_zeit ON protokoll (zeit)",
+  `CREATE TABLE IF NOT EXISTS einsaetze (
+     id INTEGER PRIMARY KEY AUTOINCREMENT, stichwort TEXT NOT NULL, ort TEXT, lat REAL, lng REAL,
+     bemerkung TEXT, notruf_nr INTEGER, offen INTEGER NOT NULL DEFAULT 1,
+     erstellt_von TEXT, erstellt_am TEXT, abgeschlossen_von TEXT, abgeschlossen_am TEXT)`,
+  `CREATE TABLE IF NOT EXISTS alarmierungen (
+     einsatz_id INTEGER NOT NULL, fahrzeug_id TEXT NOT NULL, alarmiert_am TEXT NOT NULL,
+     alarmiert_von TEXT, quittiert_am TEXT, PRIMARY KEY (einsatz_id, fahrzeug_id))`,
+  // Mittlere Spielerposition pro Postleitzahl – daraus rechnet die Karte ER:LC-Koordinaten um
+  `CREATE TABLE IF NOT EXISTS kalibrierung (
+     postal TEXT PRIMARY KEY, sum_x REAL NOT NULL, sum_z REAL NOT NULL, n REAL NOT NULL)`,
 ];
 // Spalten, die später dazugekommen sind (für bestehende Datenbanken)
 const NEUE_SPALTEN = { fzf: "TEXT", besatzung: "TEXT" };
@@ -56,11 +74,13 @@ const tokenCache = new Map(); // token -> { user, bis }
 const memberCache = new Map(); // userId -> { member, bis }
 const rollenCache = { bis: 0, rollen: [] };
 const mitgliederCache = { bis: 0, liste: null };
+const liveCache = { bis: 0, daten: null, pauseBis: 0, kalibriertAm: 0, kalibrierung: null, kalibrierungBis: 0 };
 let schemaBereit = false;
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (env.DISCORD_API) DISCORD = env.DISCORD_API; // nur für lokale Tests
+    if (env.PRC_API) PRC = env.PRC_API;
     const cors = corsHeaders(request, env);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
@@ -75,7 +95,7 @@ export default {
         }
         schemaBereit = true;
       }
-      const res = await route(request, env);
+      const res = await route(request, env, ctx);
       Object.entries(cors).forEach(([k, v]) => res.headers.set(k, v));
       return res;
     } catch (e) {
@@ -86,7 +106,7 @@ export default {
   },
 };
 
-async function route(request, env) {
+async function route(request, env, ctx) {
   const url = new URL(request.url);
   const pfad = url.pathname.replace(/\/+$/, "");
   const methode = request.method;
@@ -97,10 +117,80 @@ async function route(request, env) {
 
   if (pfad === "/api/fahrzeuge" && methode === "GET") {
     const { results } = await env.DB.prepare("SELECT * FROM fahrzeuge ORDER BY wache, rufname").all();
-    return json({ stand: new Date().toISOString(), fahrzeuge: results.map(ausDb) });
+    return json({ stand: new Date().toISOString(), fahrzeuge: results.map(ausDb), einsaetze: await einsatzListe(env) });
   }
 
-  let m = pfad.match(/^\/api\/fahrzeuge\/([A-Za-z0-9_-]{1,40})\/status$/);
+  if (pfad === "/api/live" && methode === "GET") {
+    return json(await live(env, ctx));
+  }
+
+  if (pfad === "/api/einsaetze" && methode === "POST") {
+    darfDisponieren(ich);
+    const b = await request.json();
+    const stichwort = text(b.stichwort, 60);
+    if (!stichwort) throw fehler(400, "Stichwort fehlt.");
+    const pos = position(b.position);
+    const fahrzeugIds = await vorhandeneFahrzeuge(env, b.fahrzeuge);
+    const notrufNr = Number.isInteger(b.notrufNr) ? b.notrufNr : null;
+    const r = await env.DB.prepare(
+      `INSERT INTO einsaetze (stichwort, ort, lat, lng, bemerkung, notruf_nr, erstellt_von, erstellt_am)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(stichwort, text(b.ort, 80), pos && pos[0], pos && pos[1], text(b.bemerkung, 300), notrufNr, ich.name, jetzt()).run();
+    const id = r.meta.last_row_id;
+    await env.DB.batch([
+      ...alarmieren(env, ich, id, fahrzeugIds),
+      protokoll(env, ich, "einsatz", `Einsatz #${id} ${stichwort} angelegt` +
+        (fahrzeugIds.length ? `, alarmiert: ${fahrzeugIds.length} Fahrzeug(e)` : "")),
+    ]);
+    return json({ ok: true, id });
+  }
+
+  let m = pfad.match(/^\/api\/einsaetze\/(\d{1,10})(\/alarm|\/abschluss)?$/);
+  if (m) {
+    darfDisponieren(ich);
+    const id = Number(m[1]);
+    const e = await env.DB.prepare("SELECT * FROM einsaetze WHERE id = ?").bind(id).first();
+    if (!e) throw fehler(404, "Einsatz nicht gefunden.");
+    if (!e.offen) throw fehler(409, "Der Einsatz ist bereits abgeschlossen.");
+
+    if (!m[2] && methode === "PUT") {
+      const b = await request.json();
+      const stichwort = text(b.stichwort, 60);
+      if (!stichwort) throw fehler(400, "Stichwort fehlt.");
+      const pos = position(b.position);
+      await env.DB.batch([
+        env.DB.prepare("UPDATE einsaetze SET stichwort = ?, ort = ?, lat = ?, lng = ?, bemerkung = ? WHERE id = ?")
+          .bind(stichwort, text(b.ort, 80), pos && pos[0], pos && pos[1], text(b.bemerkung, 300), id),
+        protokoll(env, ich, "einsatz", `Einsatz #${id} ${stichwort} bearbeitet`),
+      ]);
+      return json({ ok: true });
+    }
+
+    if (m[2] === "/alarm" && methode === "POST") {
+      const b = await request.json();
+      const neu = await vorhandeneFahrzeuge(env, b.hinzufuegen);
+      const weg = (Array.isArray(b.entfernen) ? b.entfernen : []).map(String);
+      const stmts = alarmieren(env, ich, id, neu);
+      for (const fid of weg) {
+        stmts.push(env.DB.prepare("DELETE FROM alarmierungen WHERE einsatz_id = ? AND fahrzeug_id = ?").bind(id, fid));
+      }
+      if (neu.length) stmts.push(protokoll(env, ich, "einsatz", `Einsatz #${id} ${e.stichwort}: ${neu.length} Fahrzeug(e) nachalarmiert`));
+      if (weg.length) stmts.push(protokoll(env, ich, "einsatz", `Einsatz #${id} ${e.stichwort}: ${weg.length} Alarm(e) zurückgenommen`));
+      if (stmts.length) await env.DB.batch(stmts);
+      return json({ ok: true });
+    }
+
+    if (m[2] === "/abschluss" && methode === "POST") {
+      await env.DB.batch([
+        env.DB.prepare("UPDATE einsaetze SET offen = 0, abgeschlossen_von = ?, abgeschlossen_am = ? WHERE id = ?")
+          .bind(ich.name, jetzt(), id),
+        protokoll(env, ich, "einsatz", `Einsatz #${id} ${e.stichwort} abgeschlossen`),
+      ]);
+      return json({ ok: true });
+    }
+  }
+
+  m = pfad.match(/^\/api\/fahrzeuge\/([A-Za-z0-9_-]{1,40})\/status$/);
   if (m && methode === "POST") {
     const body = await request.json();
     const status = Number(body.status);
@@ -114,6 +204,11 @@ async function route(request, env) {
         `UPDATE fahrzeuge SET status = ?, einsatz = ?, lat = ?, lng = ?, geaendert_von = ?, geaendert_am = ? WHERE id = ?`
       ).bind(status, einsatz, pos && pos[0], pos && pos[1], ich.name, jetzt(), m[1]),
       protokoll(env, ich, "status", `${f.rufname}: Status ${status}${einsatz ? " – " + einsatz : ""}`),
+      // Status 3/4 bestätigt eine offene Alarmierung des Fahrzeugs
+      env.DB.prepare(
+        `UPDATE alarmierungen SET quittiert_am = ? WHERE fahrzeug_id = ? AND quittiert_am IS NULL AND ? IN (3, 4)
+           AND einsatz_id IN (SELECT id FROM einsaetze WHERE offen = 1)`
+      ).bind(jetzt(), m[1], status),
     ]);
     return json({ ok: true });
   }
@@ -190,6 +285,7 @@ async function route(request, env) {
       env.DB.prepare("UPDATE zuteilungen SET bis = ?, ausgetragen_von = ? WHERE fahrzeug_id = ? AND bis IS NULL")
         .bind(jetzt(), ich.name, m[1]),
       env.DB.prepare("DELETE FROM fahrzeuge WHERE id = ?").bind(m[1]),
+      env.DB.prepare("DELETE FROM alarmierungen WHERE fahrzeug_id = ?").bind(m[1]),
       protokoll(env, ich, "fahrzeug", `${f.rufname} gelöscht`),
     ]);
     return json({ ok: true });
@@ -276,6 +372,7 @@ async function anmelden(request, env) {
     name: member.nick || user.global_name || user.username,
     hoehererDienst: passt(env.ROLLEN_HOEHERER_DIENST || STANDARD_HOEHERER_DIENST),
     wachleiter: passt(env.ROLLEN_WACHLEITER || STANDARD_WACHLEITER),
+    disponent: passt(env.ROLLEN_DISPONENT || STANDARD_DISPONENT),
     rollen: namen.map((r) => r.name).filter(Boolean),
   };
   return rechte(ich, env);
@@ -292,6 +389,10 @@ function darfVerwalten(ich) {
       ? "Melde dich zuerst in den Dienst, um Fahrzeuge zu verwalten."
       : "Nur Wachleiter im Dienst oder der Höhere Dienst dürfen Fahrzeuge verwalten.");
   }
+}
+
+function darfDisponieren(ich) {
+  if (!ich.disponent) throw fehler(403, "Einsätze anlegen und alarmieren kann nur die Leitstelle (Leitstellen Disponent).");
 }
 
 async function serverRollen(env) {
@@ -363,6 +464,163 @@ async function dienstListe(env) {
   }
   const { results } = await env.DB.prepare("SELECT * FROM dienst ORDER BY seit").all();
   return results.map((d) => ({ userId: d.user_id, name: d.name, seit: d.seit }));
+}
+
+// ---------- Einsätze ----------
+
+async function einsatzListe(env) {
+  const grenze = new Date(Date.now() - EINSATZ_NACHLAUF_STUNDEN * 3600 * 1000).toISOString();
+  const [e, a] = await env.DB.batch([
+    env.DB.prepare("SELECT * FROM einsaetze WHERE offen = 1 OR abgeschlossen_am >= ? ORDER BY id DESC LIMIT 50").bind(grenze),
+    env.DB.prepare(
+      `SELECT a.* FROM alarmierungen a JOIN einsaetze e ON e.id = a.einsatz_id
+       WHERE e.offen = 1 OR e.abgeschlossen_am >= ? ORDER BY a.alarmiert_am`
+    ).bind(grenze),
+  ]);
+  return e.results.map((x) => ({
+    id: x.id, stichwort: x.stichwort, ort: x.ort || undefined, bemerkung: x.bemerkung || undefined,
+    position: x.lat == null ? undefined : [x.lat, x.lng], notrufNr: x.notruf_nr ?? undefined,
+    offen: !!x.offen, erstelltVon: x.erstellt_von, erstelltAm: x.erstellt_am,
+    abgeschlossenVon: x.abgeschlossen_von || undefined, abgeschlossenAm: x.abgeschlossen_am || undefined,
+    alarmiert: a.results.filter((y) => y.einsatz_id === x.id).map((y) => ({
+      fahrzeugId: y.fahrzeug_id, alarmiertAm: y.alarmiert_am, alarmiertVon: y.alarmiert_von,
+      quittiertAm: y.quittiert_am || undefined,
+    })),
+  }));
+}
+
+async function vorhandeneFahrzeuge(env, ids) {
+  const wunsch = (Array.isArray(ids) ? ids : []).map(String).slice(0, 30);
+  if (!wunsch.length) return [];
+  const { results } = await env.DB.prepare("SELECT id FROM fahrzeuge").all();
+  const da = new Set(results.map((f) => f.id));
+  return [...new Set(wunsch.filter((id) => da.has(id)))];
+}
+
+function alarmieren(env, ich, einsatzId, fahrzeugIds) {
+  return fahrzeugIds.map((fid) => env.DB.prepare(
+    "INSERT OR IGNORE INTO alarmierungen (einsatz_id, fahrzeug_id, alarmiert_am, alarmiert_von) VALUES (?, ?, ?, ?)"
+  ).bind(einsatzId, fid, jetzt(), ich.name));
+}
+
+// ---------- ER:LC live (PRC-API) ----------
+
+// Holt Spieler und Notrufe höchstens alle LIVE_CACHE_MS vom ER:LC-Server und
+// hält sich an die Rate-Limits der API (Retry-After, Pause nach Fehlern).
+async function live(env, ctx) {
+  if (!env.PRC_SERVER_KEY) return { aktiv: false };
+  const nun = Date.now();
+  if (liveCache.daten && liveCache.bis > nun) return liveCache.daten;
+  if (liveCache.pauseBis > nun) {
+    return liveCache.daten || { aktiv: true, fehler: "ER:LC-API macht gerade eine Pause (Rate-Limit)." };
+  }
+
+  let r;
+  try {
+    r = await fetch(PRC + "/server?Players=true&EmergencyCalls=true", {
+      headers: { "server-key": env.PRC_SERVER_KEY, Accept: "application/json" },
+    });
+  } catch {
+    liveCache.pauseBis = nun + 30 * 1000;
+    return liveCache.daten || { aktiv: true, fehler: "ER:LC-API nicht erreichbar." };
+  }
+  if (r.status === 429) {
+    liveCache.pauseBis = nun + (Number(r.headers.get("Retry-After")) || 10) * 1000;
+    return liveCache.daten || { aktiv: true, fehler: "ER:LC-API macht gerade eine Pause (Rate-Limit)." };
+  }
+  if (!r.ok) {
+    // Wiederholte Fehlanfragen führen bei PRC zu Sperren – daher länger warten
+    liveCache.pauseBis = nun + 5 * 60 * 1000;
+    const daten = {
+      aktiv: true,
+      fehler: r.status === 403 ? "Server-Key ungültig – PRC_SERVER_KEY bei Cloudflare prüfen." : `ER:LC-API Fehler ${r.status}.`,
+    };
+    liveCache.daten = daten;
+    return daten;
+  }
+  if (r.headers.get("X-RateLimit-Remaining") === "0") {
+    const reset = Number(r.headers.get("X-RateLimit-Reset")) * 1000;
+    if (reset > nun) liveCache.pauseBis = reset;
+  }
+
+  const d = await r.json();
+  const alle = (d.Players || []).map((p) => {
+    const l = p.Location || {};
+    return {
+      name: String(p.Player || "").split(":")[0],
+      team: p.Team || "",
+      callsign: p.Callsign || undefined,
+      x: Number(l.LocationX), z: Number(l.LocationZ),
+      postal: l.PostalCode ? String(l.PostalCode) : undefined,
+      strasse: l.StreetName || undefined,
+      hausnr: l.BuildingNumber || undefined,
+    };
+  });
+  if (nun - liveCache.kalibriertAm > KALIBRIERUNG_INTERVALL_MS) {
+    liveCache.kalibriertAm = nun;
+    ctx.waitUntil(kalibrierungSammeln(env, alle));
+  }
+
+  const istFeuer = (team) => /fire|feuer/i.test(String(team || ""));
+  const daten = {
+    aktiv: true,
+    stand: new Date(nun).toISOString(),
+    server: {
+      name: d.Name || undefined,
+      spieler: d.CurrentPlayers ?? alle.length,
+      max: d.MaxPlayers ?? undefined,
+      feuerwehr: alle.filter((p) => istFeuer(p.team)).length,
+    },
+    spieler: alle.filter((p) => istFeuer(p.team) && Number.isFinite(p.x) && Number.isFinite(p.z)),
+    notrufe: (d.EmergencyCalls || []).filter((c) => istFeuer(c.Team)).map((c) => {
+      const [x, z] = spielPosition(c.Position);
+      return {
+        nr: c.CallNumber, beschreibung: c.Description || "", ort: c.PositionDescriptor || "",
+        x, z, seit: c.StartedAt, anrufer: c.Players?.length || 0,
+      };
+    }),
+    kalibrierung: await kalibrierungLesen(env),
+  };
+  liveCache.daten = daten;
+  liveCache.bis = nun + LIVE_CACHE_MS;
+  return daten;
+}
+
+// Position kann [x, z], [x, y, z] oder ein Objekt sein
+function spielPosition(p) {
+  if (Array.isArray(p)) return p.length >= 3 ? [Number(p[0]), Number(p[2])] : [Number(p[0]), Number(p[1])];
+  if (p && typeof p === "object") return [Number(p.LocationX ?? p.X ?? p.x), Number(p.LocationZ ?? p.Z ?? p.z)];
+  return [NaN, NaN];
+}
+
+async function kalibrierungSammeln(env, spieler) {
+  const proPostal = new Map();
+  for (const p of spieler) {
+    if (!p.postal || !Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
+    const e = proPostal.get(p.postal) || { x: 0, z: 0, n: 0 };
+    e.x += p.x; e.z += p.z; e.n += 1;
+    proPostal.set(p.postal, e);
+  }
+  if (!proPostal.size) return;
+  await env.DB.batch([
+    ...[...proPostal].map(([postal, e]) => env.DB.prepare(
+      `INSERT INTO kalibrierung (postal, sum_x, sum_z, n) VALUES (?, ?, ?, ?)
+       ON CONFLICT(postal) DO UPDATE SET sum_x = sum_x + excluded.sum_x, sum_z = sum_z + excluded.sum_z, n = n + excluded.n`
+    ).bind(postal.slice(0, 10), e.x, e.z, e.n)),
+    // Alte Werte langsam vergessen, falls sich die Karte ändert
+    env.DB.prepare("UPDATE kalibrierung SET sum_x = sum_x / 2, sum_z = sum_z / 2, n = n / 2 WHERE n > 2000"),
+  ]);
+  liveCache.kalibrierungBis = 0;
+}
+
+async function kalibrierungLesen(env) {
+  if (liveCache.kalibrierung && liveCache.kalibrierungBis > Date.now()) return liveCache.kalibrierung;
+  const { results } = await env.DB.prepare(
+    "SELECT postal, sum_x / n AS x, sum_z / n AS z, n FROM kalibrierung WHERE n >= 1"
+  ).all();
+  liveCache.kalibrierung = results;
+  liveCache.kalibrierungBis = Date.now() + KALIBRIERUNG_INTERVALL_MS;
+  return results;
 }
 
 // ---------- Aktivität ----------
@@ -465,7 +723,7 @@ async function aktivitaet(env, tage) {
   for (const c of zaehler.results) {
     const p = hole(c.user_id, c.name);
     if (c.aktion === "status") p.statusMeldungen += c.n;
-    if (c.aktion === "fahrzeug" || c.aktion === "besatzung") p.verwaltung += c.n;
+    if (c.aktion === "fahrzeug" || c.aktion === "besatzung" || c.aktion === "einsatz") p.verwaltung += c.n;
     aktiv(p, c.letzte);
   }
 

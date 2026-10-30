@@ -1,18 +1,14 @@
-# Nur nötig, wenn der Worker per Kommandozeile (npx wrangler deploy) statt
-# über das Cloudflare-Dashboard eingerichtet wird.
+# Wird von der GitHub Action (.github/workflows/worker-deploy.yml) benutzt.
+# Die Datenbank-ID kommt dort aus dem Secret D1_DATABASE_ID.
 name = "dispo-api"
 main = "worker.js"
-compatibility_date = "2026-10-01"
+compatibility_date = "2025-09-01"
 
-[vars]
-GUILD_ID = "1506205676136038491"
-ALLOWED_ORIGIN = "https://nikesieg4.github.io"
-# ROLLEN_HOEHERER_DIENST = "Brandreferendar,Brandrat,Brandoberrat,Branddirektor,Abteilungsleiter EB,Stv. Kreisbranddirektor,Kreisbranddirektor"
-# ROLLEN_WACHLEITER = "Wachleiter"
+# Variablen und Secrets aus dem Cloudflare-Dashboard beim Deploy behalten
+# (GUILD_ID, ALLOWED_ORIGIN, ROLLEN_…, BOT_TOKEN, PRC_SERVER_KEY).
+keep_vars = true
 
 [[d1_databases]]
 binding = "DB"
 database_name = "dispo"
 database_id = "HIER_DIE_D1_ID_EINTRAGEN"
-
-# BOT_TOKEN als Secret setzen:  npx wrangler secret put BOT_TOKEN

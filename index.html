@@ -35,6 +35,7 @@
         <span>Dispo · BF NRW RP</span>
       </div>
       <span id="stand" class="muted small"></span>
+      <span id="live-info" class="live-info small" hidden></span>
       <div class="user">
         <img id="user-avatar" alt="" width="28" height="28">
         <span id="user-name"></span>
@@ -42,9 +43,25 @@
       </div>
     </header>
 
+    <!-- Mein Fahrzeug: nur sichtbar, wenn man eingeteilt ist -->
+    <section id="mein-fahrzeug" class="mein" hidden aria-labelledby="mein-rufname">
+      <div class="mein-head">
+        <div class="grow">
+          <div class="muted small">Mein Fahrzeug · <span id="mein-rolle"></span></div>
+          <div id="mein-rufname" class="mein-title"></div>
+        </div>
+        <span id="mein-status" class="fms mein-fms"></span>
+      </div>
+      <div id="mein-alarm" class="mein-alarm" role="alert" hidden></div>
+      <div id="mein-buttons" class="mein-grid" role="group" aria-label="Status setzen"></div>
+      <p id="mein-error" class="error" role="alert" hidden></p>
+      <button id="mein-details" type="button" class="btn-ghost">Einsatz &amp; Position …</button>
+    </section>
+
     <aside class="sidebar">
       <nav class="tabs" role="tablist">
         <button class="tab active" role="tab" data-tab="fahrzeuge" aria-selected="true">Fahrzeuge</button>
+        <button class="tab" role="tab" data-tab="einsaetze" aria-selected="false" id="tab-btn-einsaetze" hidden>Einsätze <span id="ez-zahl" class="tab-zahl" hidden></span></button>
         <button class="tab" role="tab" data-tab="bereiche" aria-selected="false">Bereiche</button>
         <button class="tab" role="tab" data-tab="verwaltung" aria-selected="false" id="tab-btn-verwaltung" hidden>Verwaltung</button>
       </nav>
@@ -57,6 +74,28 @@
           <p id="rechte-text"></p>
           <p class="muted small">Rollen laut Bot: <span id="rechte-rollen"></span></p>
         </details>
+      </div>
+
+      <div id="tab-einsaetze" class="tab-panel" hidden>
+        <button id="ez-neu" type="button" class="btn-primary ez-neu" hidden>Neuer Einsatz</button>
+
+        <section id="notruf-box" class="card" hidden>
+          <h2 class="card-title">Notrufe aus dem Spiel</h2>
+          <div id="notruf-liste"></div>
+        </section>
+
+        <h2 class="sec-title">Laufende Einsätze</h2>
+        <div id="ez-liste"></div>
+
+        <details class="ez-alt">
+          <summary>Abgeschlossen (letzte 6 Std.)</summary>
+          <div id="ez-alt"></div>
+        </details>
+
+        <div id="live-optionen" hidden>
+          <label class="check"><input type="checkbox" id="toggle-spieler" checked> Feuerwehr-Spieler aus ER:LC zeigen</label>
+          <label class="check"><input type="checkbox" id="toggle-notrufe" checked> Notrufe aus ER:LC zeigen</label>
+        </div>
       </div>
 
       <div id="tab-bereiche" class="tab-panel" hidden>
@@ -163,6 +202,52 @@
     </form>
     <datalist id="cd-fzf-optionen"></datalist>
     <datalist id="cd-optionen"></datalist>
+  </dialog>
+
+  <!-- Einsatz anlegen / bearbeiten -->
+  <dialog id="ez-dialog" class="dialog" aria-labelledby="ez-title">
+    <form method="dialog" class="form">
+      <h2 id="ez-title">Neuer Einsatz</h2>
+      <label class="field">Stichwort
+        <input id="ez-stichwort" list="ez-stichworte" maxlength="60" required placeholder="z. B. B2 – Brand Gebäude" autocomplete="off">
+      </label>
+      <label class="field">Einsatzort
+        <input id="ez-ort" maxlength="80" placeholder="z. B. Springfield, Postal 218">
+      </label>
+      <div class="sd-pos-row">
+        <span id="ez-pos" class="muted small"></span>
+        <button id="ez-pick" type="button" class="btn-ghost">Auf Karte wählen</button>
+      </div>
+      <label class="field">Bemerkung
+        <textarea id="ez-bemerkung" maxlength="300" rows="2" placeholder="z. B. Person im 1. OG vermisst"></textarea>
+      </label>
+      <div>
+        <div class="field-label">Fahrzeuge alarmieren</div>
+        <div id="ez-fahrzeuge" class="ez-fahrzeuge"></div>
+      </div>
+      <p id="ez-error" class="error" role="alert" hidden></p>
+      <div class="row end">
+        <button id="ez-cancel" type="button" class="btn-ghost">Abbrechen</button>
+        <button id="ez-save" type="submit" class="btn-primary">Alarmieren</button>
+      </div>
+    </form>
+    <datalist id="ez-stichworte">
+      <option value="B1 – Kleinbrand"></option>
+      <option value="B2 – Brand Gebäude"></option>
+      <option value="B3 – Großbrand"></option>
+      <option value="B – Fahrzeugbrand"></option>
+      <option value="B – Waldbrand"></option>
+      <option value="TH1 – Technische Hilfe klein"></option>
+      <option value="TH – Verkehrsunfall"></option>
+      <option value="TH – Person eingeklemmt"></option>
+      <option value="TH – Person in Notlage"></option>
+      <option value="RD1 – Notfall"></option>
+      <option value="RD2 – Notfall mit Notarzt"></option>
+      <option value="RD – MANV"></option>
+      <option value="ABC – Gefahrstoffaustritt"></option>
+      <option value="W – Wasserrettung"></option>
+      <option value="BMA – Brandmeldeanlage"></option>
+    </datalist>
   </dialog>
 
   <!-- Aktivität -->

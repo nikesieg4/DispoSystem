@@ -30,6 +30,24 @@ Verwaltungsaktionen, dazu die letzten Aktionen im Protokoll. Beides als CSV
 für Excel: die Rangliste und alle einzelnen Zuteilungen mit *zugeteilt von*
 und *ausgetragen von*. Zuteilungen laufen, bis jemand ausgetragen wird.
 
+**Einsätze** (Tab *Einsätze*): Der **Leitstellen-Disponent** legt Einsätze
+mit Stichwort, Ort, Position und Bemerkung an und alarmiert Fahrzeuge. Die
+Fahrzeuge setzen ihren Status selbst – mit Status 3 oder 4 gilt die
+Alarmierung als quittiert, bis dahin steht beim Fahrzeug *wartet*. Der
+Disponent kann nachalarmieren, Alarme zurücknehmen und Einsätze abschließen.
+
+**Mein Fahrzeug**: Wer als FzF oder Besatzung eingeteilt ist, sieht oben sein
+Fahrzeug mit großen Status-Buttons 1–8 und dem aktuellen Alarm („Einsatzdaten
+übernehmen“ füllt Einsatztext und Position vor). Auf dem Handy ganz oben.
+
+**ER:LC live** (optional, mit `PRC_SERVER_KEY`): Alle Spieler im Team *Fire*
+erscheinen live auf der Karte, Feuerwehr-Notrufe aus dem Spiel ebenfalls –
+der Disponent macht daraus mit einem Klick einen Einsatz. Die Umrechnung der
+Spielkoordinaten auf die Karte kalibriert sich automatisch über die
+Postleitzahlen der Spieler (Daten von erlc.one); bis genug Daten da sind,
+steht oben „Karte wird kalibriert“. Der Worker fragt die ER:LC-API höchstens
+alle 5 Sekunden ab und hält sich an deren Rate-Limits.
+
 Die Rollen liest der Discord-Bot auf dem Server aus – sie lassen sich im
 Browser nicht fälschen. Eine Dienstmeldung läuft nach 12 Stunden ab.
 
@@ -91,6 +109,8 @@ Kostenlos über Cloudflare, alles im Browser:
    | `ROLLEN_HOEHERER_DIENST` | Text (optional) | Standard: `Brandreferendar,Brandrat,Brandoberrat,Branddirektor,Abteilungsleiter Einsatzbetrieb,Stv. Kreisbranddirektor,Kreisbranddirektor` |
    | `ROLLEN_WACHLEITER` | Text (optional) | Standard: `Wachleiter` |
    | `ROLLEN_FZF` | Text (optional) | Standard: `Fahrzeugführer` |
+   | `ROLLEN_DISPONENT` | Text (optional) | Standard: `Leitstellen Disponent` |
+   | `PRC_SERVER_KEY` | **Secret** (optional) | Server-Key der ER:LC-API für Live-Spieler und Notrufe |
 
    Rollen können per Name (Abkürzungen wie `BD » [Branddirektor]` oder `[BD] Branddirektor` werden ignoriert) oder per
    Rollen-ID angegeben werden, mehrere mit Komma getrennt.
@@ -100,6 +120,23 @@ Kostenlos über Cloudflare, alles im Browser:
 Danach erscheint für Wachleiter und den Höheren Dienst der Tab
 **Verwaltung**. Beim ersten Mal können dort die Beispielfahrzeuge aus
 `data/fahrzeuge.json` übernommen werden.
+
+### Worker automatisch aktualisieren (GitHub Action)
+
+`.github/workflows/worker-deploy.yml` deployt den Worker bei jedem Push, der
+`worker/` ändert – Code bei Cloudflare einfügen ist dann nicht mehr nötig.
+Einmalig im Repo unter **Settings → Secrets and variables → Actions → New
+repository secret** anlegen:
+
+| Secret | Woher |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare → *My Profile → API Tokens → Create Token* → Vorlage **Edit Cloudflare Workers** |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare → *Workers & Pages* → rechts *Account ID* |
+| `D1_DATABASE_ID` | Cloudflare → *Storage & Databases → D1 → dispo* → *Database ID* |
+
+Variablen und Secrets des Workers (`BOT_TOKEN`, `PRC_SERVER_KEY`, …) bleiben
+im Cloudflare-Dashboard und werden beim Deploy nicht verändert. Manuell
+starten: *Actions → Worker deployen → Run workflow*.
 
 ### 5. Bot dauerhaft online (Raspberry Pi)
 
@@ -179,9 +216,10 @@ css/style.css     Aussehen
 js/config.js      Einstellungen (Client ID, Server, Rollen, FMS-Farben)
 js/auth.js        Discord-Login (OAuth2 Implicit Grant) + Aufrufe der API
 js/app.js         Karte, Fahrzeuge, Bereiche, Status-Dialog, Verwaltung
-data/*.json       Wachen, Bereiche, (ohne API:) Fahrzeuge
+data/*.json       Wachen, Bereiche, Postleitzahlen (Kalibrierung), (ohne API:) Fahrzeuge
 worker/worker.js  Dispo-API für Cloudflare Workers (Rollenprüfung per Bot, D1)
-worker/wrangler.toml  nur für Einrichtung per Kommandozeile
+worker/wrangler.toml  Konfiguration für das automatische Deployment
+.github/workflows/worker-deploy.yml  deployt den Worker bei jedem Push
 bot/bot.py        hält den Bot dauerhaft online
 bot/install.sh    richtet den Bot als Dienst auf dem Raspberry Pi ein
 ```

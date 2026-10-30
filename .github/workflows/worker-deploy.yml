@@ -1,0 +1,43 @@
+# Aktualisiert den Cloudflare Worker automatisch, sobald sich worker/ ändert.
+#
+# Einmalig im Repo unter Settings → Secrets and variables → Actions anlegen:
+#   CLOUDFLARE_API_TOKEN   API-Token mit der Vorlage "Edit Cloudflare Workers"
+#   CLOUDFLARE_ACCOUNT_ID  Account-ID (Cloudflare → Workers & Pages, rechts)
+#   D1_DATABASE_ID         ID der D1-Datenbank "dispo"
+# Variablen und Secrets des Workers (BOT_TOKEN, PRC_SERVER_KEY …) bleiben
+# im Cloudflare-Dashboard und werden beim Deploy nicht verändert.
+name: Worker deployen
+
+on:
+  push:
+    branches: [claude/clever-cori-bgb72j, main]
+    paths: ["worker/**", ".github/workflows/worker-deploy.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: worker-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Datenbank-ID eintragen
+        env:
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+        run: |
+          if [ -z "$D1_DATABASE_ID" ]; then
+            echo "::error::Secret D1_DATABASE_ID fehlt (siehe README)."
+            exit 1
+          fi
+          sed -i "s/HIER_DIE_D1_ID_EINTRAGEN/$D1_DATABASE_ID/" worker/wrangler.toml
+
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.40.0"
+          workingDirectory: worker
+          command: deploy

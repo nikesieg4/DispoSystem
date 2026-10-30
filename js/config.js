@@ -20,18 +20,27 @@ window.DISPO_CONFIG = {
   // Wie oft die Fahrzeugstatus neu geladen werden (Sekunden).
   refreshSeconds: 15,
 
+  // ER:LC-Livedaten (Spieler, Notrufe): Abfrage-Intervall in Sekunden.
+  // Der Worker fragt die ER:LC-API trotzdem höchstens alle 5 s ab.
+  liveSeconds: 5,
+
+  // Umrechnung ER:LC-Koordinaten → Karte. null = automatisch kalibrieren
+  // (über die Postleitzahlen der Spieler). Nur bei Bedarf fest eintragen,
+  // z. B. { s: 1.0, cx: 2677.5, cz: 2677.5 }.
+  prcKalibrierung: null,
+
   // Kartenkacheln von erlc.one (ER:LC Liberty County)
   tileUrl: "https://erlc-maps.pages.dev/map/{z}/{x}/{y}.png",
 };
 
 // FMS-Status (Funkmeldesystem)
 window.FMS_STATUS = {
-  1: { text: "Einsatzbereit über Funk", farbe: "#3E9BF0" },
-  2: { text: "Einsatzbereit auf Wache", farbe: "#30A46C" },
-  3: { text: "Einsatz übernommen", farbe: "#F5A524" },
-  4: { text: "Am Einsatzort", farbe: "#E5484D" },
-  5: { text: "Sprechwunsch", farbe: "#B77CF2" },
-  6: { text: "Nicht einsatzbereit", farbe: "#7C838D" },
-  7: { text: "Patient aufgenommen", farbe: "#12A594" },
-  8: { text: "Am Transportziel", farbe: "#6E79D6" },
+  1: { text: "Einsatzbereit über Funk", kurz: "Frei Funk", farbe: "#3E9BF0" },
+  2: { text: "Einsatzbereit auf Wache", kurz: "Wache", farbe: "#30A46C" },
+  3: { text: "Einsatz übernommen", kurz: "Übernommen", farbe: "#F5A524" },
+  4: { text: "Am Einsatzort", kurz: "Einsatzort", farbe: "#E5484D" },
+  5: { text: "Sprechwunsch", kurz: "Sprechw.", farbe: "#B77CF2" },
+  6: { text: "Nicht einsatzbereit", kurz: "Nicht bereit", farbe: "#7C838D" },
+  7: { text: "Patient aufgenommen", kurz: "Patient", farbe: "#12A594" },
+  8: { text: "Am Transportziel", kurz: "Ziel", farbe: "#6E79D6" },
 };

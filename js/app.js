@@ -70,6 +70,7 @@
 
   function showApp(user) {
     rechte = user.rechte || null;
+    meId = user.id;
     $("#login").hidden = true;
     $("#app").hidden = false;
     $("#user-name").textContent = user.nick || user.global_name || user.username;
@@ -85,7 +86,9 @@
   // ---------- Karte ----------
 
   let map, wachen = {}, bereiche = [], fahrzeuge = [];
-  let rechte = null; // nur mit API: { name, wachleiter, hoehererDienst, imDienst, verwaltung }
+  let rechte = null; // nur mit API: { name, wachleiter, hoehererDienst, disponent, imDienst, verwaltung }
+  let meId = null;
+  let einsaetze = [];
   const mitApi = () => Boolean(cfg.apiUrl);
   const vehicleLayer = L.layerGroup();
   const areaLayer = L.layerGroup();
@@ -186,6 +189,7 @@
     try {
       const data = mitApi() ? await DispoAuth.api("/api/fahrzeuge") : await loadJson("data/fahrzeuge.json");
       fahrzeuge = data.fahrzeuge || [];
+      einsaetze = data.einsaetze || [];
       $("#stand").textContent = "Stand: " + new Date(data.stand || Date.now()).toLocaleString("de-DE");
     } catch (e) {
       $("#stand").textContent = "Fahrzeugdaten konnten nicht geladen werden";
@@ -193,6 +197,10 @@
     }
     renderVehicles();
     renderVehicleList();
+    if (mitApi()) {
+      renderEinsaetze();
+      renderMeinFahrzeug();
+    }
     if (rechte && rechte.verwaltung) renderVerwaltungListe();
   }
 
@@ -216,6 +224,7 @@
          <div class="popup-row">${esc(f.typ)} · ${esc(wachen[f.wache] ? wachen[f.wache].name : f.wache)}</div>
          <div class="popup-row"><span class="fms" style="background:${color};width:20px;height:20px;font-size:11px">${esc(f.status)}</span> ${esc(fmsText(f.status))}</div>
          ${f.einsatz ? `<div class="popup-row muted">${esc(f.einsatz)}</div>` : ""}
+         ${offeneAlarme(f.id).map((e) => `<div class="popup-row alarm-text">ALARM #${e.id}: ${esc(e.stichwort)}</div>`).join("")}
          ${crewHtml(f)}
          ${mitApi() ? `<button type="button" class="btn-ghost copy" data-status-edit="${esc(f.id)}">Status ändern</button>` : ""}`
       );
@@ -256,7 +265,12 @@
 
     renderAreaList();
     initCoordTool();
-    if (mitApi()) initStatusDialog();
+    if (mitApi()) {
+      initStatusDialog();
+      initEinsaetze();
+      initMeinFahrzeug();
+      startLive();
+    }
     if (rechte && (rechte.wachleiter || rechte.hoehererDienst)) initVerwaltung();
     if (rechte) zeigeRechte();
   }
@@ -270,6 +284,7 @@
       : r.wachleiter
         ? "Wachleiter – im Dienst kannst du Fahrzeuge verwalten."
         : "Mitglied – du kannst Status ändern. Für die Verwaltung fehlt eine Wachleiter- oder Höherer-Dienst-Rolle.";
+    if (r.disponent) $("#rechte-text").textContent += " Leitstelle – du kannst Einsätze anlegen und Fahrzeuge alarmieren.";
     $("#rechte-rollen").textContent = (r.rollen || []).join(", ") || "keine (Worker-Code aktuell?)";
   }
 
@@ -290,7 +305,7 @@
       stationGroups(visible, (f) =>
         `<button type="button" class="item" data-veh="${esc(f.id)}">
           <span class="fms" style="background:${fmsColor(f.status)}">${esc(f.status)}</span>
-          <span class="grow"><div class="title">${esc(f.rufname)}</div><div class="sub">${esc(f.typ)} · ${esc(f.einsatz || fmsText(f.status))}</div>${crewKurz(f) ? `<div class="crew">${esc(crewKurz(f))}</div>` : ""}</span>
+          <span class="grow"><div class="title">${esc(f.rufname)}</div><div class="sub">${esc(f.typ)} · ${esc(f.einsatz || fmsText(f.status))}</div>${offeneAlarme(f.id).map((e) => `<div class="alarm">ALARM #${e.id} · ${esc(e.stichwort)}</div>`).join("")}${crewKurz(f) ? `<div class="crew">${esc(crewKurz(f))}</div>` : ""}</span>
         </button>`
       ) || '<p class="muted">Keine Fahrzeuge mit diesem Status.</p>';
   }
@@ -366,7 +381,7 @@
         dialogAuswahl.position = [Number(latlng.lat.toFixed(3)), Number(latlng.lng.toFixed(3))];
         renderStatusDialog();
         $("#status-dialog").showModal();
-      });
+      }, "#status-dialog");
     });
     $("#sd-wache").addEventListener("click", () => {
       dialogAuswahl.position = null;
@@ -405,9 +420,9 @@
     });
   }
 
-  function openStatusDialog(f) {
+  function openStatusDialog(f, vorlage = {}) {
     dialogFahrzeug = f;
-    dialogAuswahl = { status: f.status, einsatz: f.einsatz || "", position: f.position || null };
+    dialogAuswahl = { status: f.status, einsatz: f.einsatz || "", position: f.position || null, ...vorlage };
     $("#sd-title").textContent = f.rufname;
     $("#sd-sub").textContent = `${f.typ} · ${wachen[f.wache] ? wachen[f.wache].name : f.wache}`;
     $("#sd-einsatz").value = dialogAuswahl.einsatz;
@@ -436,8 +451,11 @@
     return n ? ` · Nähe ${n.a.name}` : "";
   }
 
-  function startPick(cb) {
+  let pickDialog = null;
+
+  function startPick(cb, dialog) {
     pickCallback = cb;
+    pickDialog = dialog;
     $("#pick-banner").hidden = false;
     map.getContainer().style.cursor = "crosshair";
     map.once("click", (e) => {
@@ -452,7 +470,408 @@
     pickCallback = null;
     $("#pick-banner").hidden = true;
     map.getContainer().style.cursor = "";
-    if (reopen) $("#status-dialog").showModal();
+    if (reopen && pickDialog) $(pickDialog).showModal();
+  }
+
+  // ---------- Einsätze (Leitstelle) ----------
+
+  const einsatzLayer = L.layerGroup();
+  let ezBearbeiten = null; // Einsatz beim Bearbeiten, null = neu
+  let ezVorlage = {};      // { position, notrufNr } beim Anlegen
+
+  const offeneAlarme = (fahrzeugId) =>
+    einsaetze.filter((e) => e.offen && e.alarmiert.some((a) => a.fahrzeugId === fahrzeugId));
+
+  function initEinsaetze() {
+    $("#tab-btn-einsaetze").hidden = false;
+    $("#ez-neu").hidden = !(rechte && rechte.disponent);
+    einsatzLayer.addTo(map);
+
+    $("#ez-neu").addEventListener("click", () => openEinsatzDialog(null));
+    $("#ez-cancel").addEventListener("click", () => $("#ez-dialog").close());
+    $("#ez-pick").addEventListener("click", () => {
+      $("#ez-dialog").close();
+      startPick((latlng) => {
+        ezVorlage.position = [Number(latlng.lat.toFixed(3)), Number(latlng.lng.toFixed(3))];
+        if (!$("#ez-ort").value.trim()) $("#ez-ort").value = naechsterBereich(ezVorlage.position).replace(" · Nähe ", "");
+        renderEinsatzPos();
+        $("#ez-dialog").showModal();
+      }, "#ez-dialog");
+    });
+    $("#ez-dialog").addEventListener("submit", speichereEinsatz);
+
+    const klick = async (e) => {
+      const b = e.target.closest("[data-ez]");
+      if (!b) return;
+      const ez = einsaetze.find((x) => x.id === Number(b.dataset.ez));
+      if (!ez) return;
+      if (b.dataset.aktion === "karte" && ez.position) map.flyTo(ez.position, 5);
+      if (b.dataset.aktion === "bearbeiten") openEinsatzDialog(ez);
+      if (b.dataset.aktion === "abschluss" && confirm(`Einsatz #${ez.id} „${ez.stichwort}“ abschließen?`)) {
+        try {
+          await DispoAuth.api(`/api/einsaetze/${ez.id}/abschluss`, { method: "POST" });
+          await refresh();
+        } catch (err) {
+          alert(err.message);
+        }
+      }
+    };
+    $("#ez-liste").addEventListener("click", klick);
+    $("#ez-alt").addEventListener("click", klick);
+
+    map.on("popupopen", (e) => {
+      e.popup.getElement().querySelectorAll("[data-ez-edit]").forEach((el) =>
+        el.addEventListener("click", () => openEinsatzDialog(einsaetze.find((x) => x.id === Number(el.dataset.ezEdit))))
+      );
+      e.popup.getElement().querySelectorAll("[data-notruf]").forEach((el) =>
+        el.addEventListener("click", () => einsatzAusNotruf(Number(el.dataset.notruf)))
+      );
+    });
+  }
+
+  function alarmChips(ez) {
+    return ez.alarmiert.map((a) => {
+      const f = fahrzeuge.find((x) => x.id === a.fahrzeugId);
+      if (!f) return "";
+      const offen = ez.offen && !a.quittiertAm;
+      return `<span class="ez-chip${offen ? " offen" : ""}" title="${offen ? "noch nicht quittiert" : "quittiert"}">
+        <span class="fms" style="background:${fmsColor(f.status)}">${esc(f.status)}</span>${esc(f.rufname)}
+        ${offen ? "<small>wartet</small>" : ""}</span>`;
+    }).join("");
+  }
+
+  function einsatzKarte(ez) {
+    const darf = rechte && rechte.disponent && ez.offen;
+    return `<div class="ez-card${ez.offen ? "" : " zu"}">
+      <div class="ez-kopf"><span class="ez-stw">#${ez.id} ${esc(ez.stichwort)}</span>
+        <span class="ez-meta">${fmtUhr(ez.erstelltAm)}</span></div>
+      ${ez.ort ? `<p>${esc(ez.ort)}</p>` : ""}
+      ${ez.bemerkung ? `<p class="muted">${esc(ez.bemerkung)}</p>` : ""}
+      <div class="ez-fz">${alarmChips(ez) || '<span class="muted small">Keine Fahrzeuge alarmiert</span>'}</div>
+      <div class="ez-meta">Disponent: ${esc(ez.erstelltVon || "–")}${ez.offen ? "" : ` · abgeschlossen ${fmtUhr(ez.abgeschlossenAm)}`}</div>
+      <div class="ez-aktionen">
+        ${ez.position ? `<button type="button" class="btn-ghost" data-ez="${ez.id}" data-aktion="karte">Auf Karte</button>` : ""}
+        ${darf ? `<button type="button" class="btn-ghost" data-ez="${ez.id}" data-aktion="bearbeiten">Bearbeiten / Alarmieren</button>
+                  <button type="button" class="btn-ghost" data-ez="${ez.id}" data-aktion="abschluss">Abschließen</button>` : ""}
+      </div>
+    </div>`;
+  }
+
+  function renderEinsaetze() {
+    const offen = einsaetze.filter((e) => e.offen);
+    $("#ez-zahl").hidden = !offen.length;
+    $("#ez-zahl").textContent = offen.length;
+    $("#ez-liste").innerHTML = offen.map(einsatzKarte).join("") || '<p class="muted">Keine laufenden Einsätze.</p>';
+    $("#ez-alt").innerHTML = einsaetze.filter((e) => !e.offen).map(einsatzKarte).join("") || '<p class="muted">Keine.</p>';
+
+    einsatzLayer.clearLayers();
+    offen.filter((e) => e.position).forEach((ez) => {
+      L.marker(ez.position, {
+        icon: L.divIcon({ className: "", html: `<div class="ez-marker">#${ez.id} ${esc(ez.stichwort.slice(0, 24))}</div>`, iconAnchor: [14, 12] }),
+        zIndexOffset: 500,
+      }).bindPopup(`<div class="popup-title">#${ez.id} ${esc(ez.stichwort)}</div>
+        ${ez.ort ? `<div class="popup-row">${esc(ez.ort)}</div>` : ""}
+        ${ez.bemerkung ? `<div class="popup-row muted">${esc(ez.bemerkung)}</div>` : ""}
+        <div class="ez-fz">${alarmChips(ez)}</div>
+        ${rechte && rechte.disponent ? `<button type="button" class="btn-ghost copy" data-ez-edit="${ez.id}">Bearbeiten / Alarmieren</button>` : ""}`)
+        .addTo(einsatzLayer);
+    });
+    renderNotrufe();
+  }
+
+  function openEinsatzDialog(ez, vorlage = {}) {
+    if (!ez && !(rechte && rechte.disponent)) return;
+    ezBearbeiten = ez;
+    ezVorlage = { position: ez ? ez.position || null : null, notrufNr: undefined, ...vorlage };
+    $("#ez-title").textContent = ez ? `Einsatz #${ez.id} bearbeiten` : "Neuer Einsatz";
+    $("#ez-save").textContent = ez ? "Speichern & alarmieren" : "Einsatz anlegen & alarmieren";
+    $("#ez-stichwort").value = ez ? ez.stichwort : vorlage.stichwort || "";
+    $("#ez-ort").value = ez ? ez.ort || "" : vorlage.ort || "";
+    $("#ez-bemerkung").value = ez ? ez.bemerkung || "" : vorlage.bemerkung || "";
+    $("#ez-error").hidden = true;
+
+    const alarmiert = new Set(ez ? ez.alarmiert.map((a) => a.fahrzeugId) : []);
+    const woanders = (f) => einsaetze.find((e) => e.offen && (!ez || e.id !== ez.id) && e.alarmiert.some((a) => a.fahrzeugId === f.id));
+    $("#ez-fahrzeuge").innerHTML = Object.values(wachen).filter((w) => w.typ === "wache").map((w) => {
+      const liste = fahrzeuge.filter((f) => f.wache === w.id);
+      if (!liste.length) return "";
+      return `<h3>${esc(w.name)}</h3>` + liste.map((f) => {
+        const anderer = woanders(f);
+        return `<label><input type="checkbox" value="${esc(f.id)}"${alarmiert.has(f.id) ? " checked" : ""}>
+          <span class="fms" style="background:${fmsColor(f.status)}">${esc(f.status)}</span>${esc(f.rufname)} · ${esc(f.typ)}
+          ${anderer ? `<small>im Einsatz #${anderer.id}</small>` : ""}</label>`;
+      }).join("");
+    }).join("") || '<p class="muted small">Noch keine Fahrzeuge eingetragen.</p>';
+
+    renderEinsatzPos();
+    $("#ez-dialog").showModal();
+    $("#ez-stichwort").focus();
+  }
+
+  function renderEinsatzPos() {
+    const p = ezVorlage.position;
+    $("#ez-pos").textContent = p ? `Position gesetzt${naechsterBereich(p)}` : "Keine Position – Einsatz erscheint nicht auf der Karte";
+  }
+
+  async function speichereEinsatz(e) {
+    e.preventDefault();
+    const gewaehlt = [...document.querySelectorAll("#ez-fahrzeuge input:checked")].map((i) => i.value);
+    const daten = {
+      stichwort: $("#ez-stichwort").value.trim(),
+      ort: $("#ez-ort").value.trim(),
+      bemerkung: $("#ez-bemerkung").value.trim(),
+      position: ezVorlage.position,
+    };
+    $("#ez-save").disabled = true;
+    try {
+      if (ezBearbeiten) {
+        const vorher = ezBearbeiten.alarmiert.map((a) => a.fahrzeugId);
+        await DispoAuth.api(`/api/einsaetze/${ezBearbeiten.id}`, { method: "PUT", body: daten });
+        const hinzufuegen = gewaehlt.filter((id) => !vorher.includes(id));
+        const entfernen = vorher.filter((id) => !gewaehlt.includes(id));
+        if (hinzufuegen.length || entfernen.length) {
+          await DispoAuth.api(`/api/einsaetze/${ezBearbeiten.id}/alarm`, { method: "POST", body: { hinzufuegen, entfernen } });
+        }
+      } else {
+        await DispoAuth.api("/api/einsaetze", {
+          method: "POST",
+          body: { ...daten, fahrzeuge: gewaehlt, notrufNr: ezVorlage.notrufNr },
+        });
+      }
+      $("#ez-dialog").close();
+      await refresh();
+    } catch (err) {
+      zeigeFehler("#ez-error", err);
+    } finally {
+      $("#ez-save").disabled = false;
+    }
+  }
+
+  function fmtUhr(iso) {
+    return iso ? new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "";
+  }
+
+  // ---------- ER:LC live: Feuerwehr-Spieler & Notrufe ----------
+
+  const KARTE = 5355 / 256; // Kartenbild in Pixeln / Leaflet-Einheiten
+  const spielerLayer = L.layerGroup();
+  const notrufLayer = L.layerGroup();
+  let live = null;
+  let postleitzahlen = {};
+  let umrechnung = null;
+
+  async function startLive() {
+    try {
+      postleitzahlen = await loadJson("data/postleitzahlen.json");
+    } catch {
+      postleitzahlen = {};
+    }
+    $("#toggle-spieler").addEventListener("change", (e) => (e.target.checked ? spielerLayer.addTo(map) : spielerLayer.remove()));
+    $("#toggle-notrufe").addEventListener("change", (e) => (e.target.checked ? notrufLayer.addTo(map) : notrufLayer.remove()));
+    spielerLayer.addTo(map);
+    notrufLayer.addTo(map);
+    await ladeLive();
+    if (live && live.aktiv) setInterval(() => !document.hidden && ladeLive(), (cfg.liveSeconds || 5) * 1000);
+  }
+
+  async function ladeLive() {
+    try {
+      live = await DispoAuth.api("/api/live");
+    } catch (err) {
+      live = { aktiv: true, fehler: err.message };
+    }
+    if (!live.aktiv) return;
+    $("#live-optionen").hidden = false;
+    umrechnung = cfg.prcKalibrierung || kalibrieren(live.kalibrierung || []);
+    renderLive();
+  }
+
+  // Bestimmt Maßstab und Mittelpunkt aus der mittleren Spielerposition je
+  // Postleitzahl und der Lage der Postleitzahlen auf der Karte (gewichtete
+  // lineare Regression, gleicher Maßstab für X und Z).
+  function kalibrieren(werte) {
+    const pkt = werte
+      .filter((w) => postleitzahlen[w.postal] && Number.isFinite(w.x) && Number.isFinite(w.z))
+      .map((w) => {
+        const [lat, lng] = postleitzahlen[w.postal];
+        return { X: w.x, Z: w.z, P: lng * KARTE, Q: -lat * KARTE, g: Math.sqrt(w.n) };
+      });
+    if (pkt.length < 4) return { fehlt: 4 - pkt.length };
+    const G = pkt.reduce((s, p) => s + p.g, 0);
+    const mw = (k) => pkt.reduce((s, p) => s + p.g * p[k], 0) / G;
+    const [mX, mZ, mP, mQ] = ["X", "Z", "P", "Q"].map(mw);
+    let zaehler = 0, nenner = 0;
+    for (const p of pkt) {
+      zaehler += p.g * ((p.X - mX) * (p.P - mP) + (p.Z - mZ) * (p.Q - mQ));
+      nenner += p.g * ((p.X - mX) ** 2 + (p.Z - mZ) ** 2);
+    }
+    const s = zaehler / nenner;
+    if (!(s > 0) || !Number.isFinite(s)) return { fehlt: 1 };
+    return { s, cx: mP - s * mX, cz: mQ - s * mZ, punkte: pkt.length };
+  }
+
+  function spielZuKarte(x, z) {
+    if (!umrechnung || !umrechnung.s || !Number.isFinite(x) || !Number.isFinite(z)) return null;
+    const px = umrechnung.cx + umrechnung.s * x;
+    const py = umrechnung.cz + umrechnung.s * z;
+    return [-py / KARTE, px / KARTE];
+  }
+
+  function renderLive() {
+    const info = $("#live-info");
+    info.hidden = false;
+    info.className = "live-info small";
+    if (live.fehler) {
+      info.classList.add("warn");
+      info.textContent = "ER:LC: " + live.fehler;
+    } else if (!umrechnung || !umrechnung.s) {
+      info.classList.add("warn");
+      info.textContent = `ER:LC: ${live.server.feuerwehr} Feuerwehr · Karte wird kalibriert (noch ${umrechnung ? umrechnung.fehlt : "?"} Postleitzahl(en))`;
+    } else {
+      info.classList.add("ok");
+      info.textContent = `ER:LC: ${live.server.spieler}${live.server.max ? "/" + live.server.max : ""} Spieler · ${live.server.feuerwehr} Feuerwehr`;
+    }
+
+    spielerLayer.clearLayers();
+    (live.spieler || []).forEach((p) => {
+      const pos = spielZuKarte(p.x, p.z);
+      if (!pos) return;
+      const ort = [p.hausnr, p.strasse].filter(Boolean).join(" ") + (p.postal ? ` (Postal ${p.postal})` : "");
+      L.marker(pos, {
+        icon: L.divIcon({ className: "", html: '<div class="spieler-dot"></div>', iconSize: [12, 12], iconAnchor: [6, 6] }),
+        zIndexOffset: 300,
+      })
+        .bindTooltip(`${esc(p.name)}${p.callsign ? " · " + esc(p.callsign) : ""}`, { direction: "top", offset: [0, -6] })
+        .bindPopup(`<div class="popup-title">${esc(p.name)}</div>
+          ${p.callsign ? `<div class="popup-row">Callsign: ${esc(p.callsign)}</div>` : ""}
+          ${ort.trim() ? `<div class="popup-row muted">${esc(ort.trim())}</div>` : ""}`)
+        .addTo(spielerLayer);
+    });
+    renderNotrufe();
+  }
+
+  function renderNotrufe() {
+    if (!live || !live.aktiv) return;
+    const notrufe = live.notrufe || [];
+    const uebernommen = (nr) => einsaetze.find((e) => e.offen && e.notrufNr === nr);
+    const darf = rechte && rechte.disponent;
+
+    $("#notruf-box").hidden = !notrufe.length;
+    $("#notruf-liste").innerHTML = notrufe.map((c) => {
+      const ez = uebernommen(c.nr);
+      return `<div class="notruf"><div class="grow">
+          <div><b>Notruf ${esc(c.nr)}</b> <span class="muted small">${fmtSeit(c.seit)}</span></div>
+          <div>${esc(c.beschreibung || "ohne Beschreibung")}</div>
+          ${c.ort ? `<div class="muted small">${esc(c.ort)}</div>` : ""}
+        </div>
+        ${ez ? `<span class="muted small">→ Einsatz #${ez.id}</span>`
+             : darf ? `<button type="button" class="btn-ghost" data-notruf-liste="${esc(c.nr)}">Einsatz anlegen</button>` : ""}
+      </div>`;
+    }).join("");
+    $("#notruf-liste").querySelectorAll("[data-notruf-liste]").forEach((b) =>
+      b.addEventListener("click", () => einsatzAusNotruf(Number(b.dataset.notrufListe)))
+    );
+
+    notrufLayer.clearLayers();
+    notrufe.forEach((c) => {
+      const pos = spielZuKarte(c.x, c.z);
+      if (!pos || uebernommen(c.nr)) return;
+      L.marker(pos, {
+        icon: L.divIcon({ className: "", html: '<div class="notruf-marker">112</div>', iconSize: [34, 34], iconAnchor: [17, 17] }),
+        zIndexOffset: 600,
+      }).bindPopup(`<div class="popup-title">Notruf ${esc(c.nr)}</div>
+        <div class="popup-row">${esc(c.beschreibung || "ohne Beschreibung")}</div>
+        ${c.ort ? `<div class="popup-row muted">${esc(c.ort)}</div>` : ""}
+        <div class="popup-row muted">${fmtSeit(c.seit)}</div>
+        ${darf ? `<button type="button" class="btn-ghost copy" data-notruf="${esc(c.nr)}">Einsatz anlegen</button>` : ""}`)
+        .addTo(notrufLayer);
+    });
+  }
+
+  function einsatzAusNotruf(nr) {
+    const c = (live && live.notrufe || []).find((x) => x.nr === nr);
+    if (!c) return;
+    const pos = spielZuKarte(c.x, c.z);
+    map.closePopup();
+    openEinsatzDialog(null, {
+      ort: c.ort,
+      bemerkung: c.beschreibung ? `Notruf ${c.nr}: ${c.beschreibung}` : `Notruf ${c.nr}`,
+      position: pos ? [Number(pos[0].toFixed(3)), Number(pos[1].toFixed(3))] : null,
+      notrufNr: c.nr,
+    });
+  }
+
+  function fmtSeit(t) {
+    if (!t) return "";
+    const ms = typeof t === "number" ? (t < 1e12 ? t * 1000 : t) : Date.parse(t);
+    if (!Number.isFinite(ms)) return "";
+    const min = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    return min < 1 ? "gerade eben" : `vor ${min} min`;
+  }
+
+  // ---------- Mein Fahrzeug ----------
+
+  let meinFahrzeug = null;
+
+  function initMeinFahrzeug() {
+    $("#mein-buttons").innerHTML = Object.entries(FMS)
+      .map(([n, s]) => `<button type="button" data-n="${n}" style="--c:${s.farbe}" title="${esc(s.text)}">${n}<span>${esc(s.kurz || s.text)}</span></button>`)
+      .join("");
+    $("#mein-buttons").addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-n]");
+      if (!b || !meinFahrzeug) return;
+      const status = Number(b.dataset.n);
+      const f = meinFahrzeug;
+      // 1/2 = frei: Einsatztext und Position zurücksetzen, sonst beibehalten
+      const frei = status === 1 || status === 2;
+      $("#mein-buttons").querySelectorAll("button").forEach((x) => (x.disabled = true));
+      try {
+        await DispoAuth.api(`/api/fahrzeuge/${encodeURIComponent(f.id)}/status`, {
+          method: "POST",
+          body: { status, einsatz: frei ? "" : f.einsatz || "", position: frei ? null : f.position || null },
+        });
+        $("#mein-error").hidden = true;
+        await refresh();
+      } catch (err) {
+        zeigeFehler("#mein-error", err);
+      } finally {
+        $("#mein-buttons").querySelectorAll("button").forEach((x) => (x.disabled = false));
+      }
+    });
+    $("#mein-details").addEventListener("click", () => meinFahrzeug && openStatusDialog(meinFahrzeug));
+    $("#mein-alarm").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-uebernehmen]");
+      const ez = b && einsaetze.find((x) => x.id === Number(b.dataset.uebernehmen));
+      if (!ez || !meinFahrzeug) return;
+      openStatusDialog(meinFahrzeug, {
+        einsatz: [ez.stichwort, ez.ort].filter(Boolean).join(" – "),
+        position: ez.position || meinFahrzeug.position || null,
+      });
+    });
+  }
+
+  function renderMeinFahrzeug() {
+    const istMeins = (f) => (f.fzf && f.fzf.userId === meId) || (f.besatzung || []).some((p) => p.userId === meId);
+    meinFahrzeug = meId ? fahrzeuge.find(istMeins) || null : null;
+    $("#mein-fahrzeug").hidden = !meinFahrzeug;
+    if (!meinFahrzeug) return;
+    const f = meinFahrzeug;
+    const ich = f.fzf && f.fzf.userId === meId ? null : (f.besatzung || []).find((p) => p.userId === meId);
+    $("#mein-rolle").textContent = ich ? ich.funktion || "Besatzung" : "Fahrzeugführer";
+    $("#mein-rufname").textContent = `${f.rufname} · ${f.typ}`;
+    $("#mein-status").textContent = f.status;
+    $("#mein-status").style.background = fmsColor(f.status);
+    $("#mein-status").title = fmsText(f.status);
+    $("#mein-buttons").querySelectorAll("[data-n]").forEach((b) => b.setAttribute("aria-pressed", Number(b.dataset.n) === f.status));
+
+    const alarme = offeneAlarme(f.id);
+    $("#mein-alarm").hidden = !alarme.length;
+    $("#mein-alarm").innerHTML = alarme.map((ez) => `
+      <div><b>ALARM #${ez.id}: ${esc(ez.stichwort)}</b></div>
+      ${ez.ort ? `<div>${esc(ez.ort)}</div>` : ""}
+      ${ez.bemerkung ? `<div class="muted">${esc(ez.bemerkung)}</div>` : ""}
+      <div class="muted small">Alarmiert ${fmtUhr((ez.alarmiert.find((a) => a.fahrzeugId === f.id) || {}).alarmiertAm)} von ${esc(ez.erstelltVon || "Leitstelle")} – Status bitte selbst setzen (3 = übernommen).</div>
+      <button type="button" class="btn-primary" data-uebernehmen="${ez.id}">Einsatzdaten übernehmen …</button>`).join("");
   }
 
   // ---------- Verwaltung: Dienst & Fahrzeuge ----------
@@ -590,7 +1009,7 @@
   let aktDaten = null;
   let aktSort = { key: "fahrzeugMs", desc: true };
 
-  const AKT_AKTIONEN = { status: "Status", fahrzeug: "Fahrzeug", besatzung: "Besatzung", dienst: "Dienst" };
+  const AKT_AKTIONEN = { status: "Status", fahrzeug: "Fahrzeug", besatzung: "Besatzung", dienst: "Dienst", einsatz: "Einsatz" };
 
   function initAktivitaet() {
     $("#akt-btn").addEventListener("click", () => {

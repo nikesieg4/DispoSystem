@@ -45,8 +45,8 @@ button { font: inherit; cursor: pointer; }
   height: 100%;
   display: grid;
   grid-template-columns: 340px 1fr;
-  grid-template-rows: 52px 1fr;
-  grid-template-areas: "top top" "side map";
+  grid-template-rows: 52px auto 1fr;
+  grid-template-areas: "top top" "mein map" "side map";
 }
 .topbar {
   grid-area: top; display: flex; align-items: center; gap: 16px; padding: 0 16px;
@@ -191,6 +191,78 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 0;
 .grow { flex: 1; }
 .popup-crew { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 12px; }
 
+/* ER:LC live */
+.live-info { padding: 2px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+.live-info.ok { color: #9FD8B5; }
+.live-info.warn { color: #F5C26B; }
+.spieler-dot {
+  width: 12px; height: 12px; border-radius: 50%; background: #FF6B3D; border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(0,0,0,.45);
+}
+.notruf-marker {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  background: #F5A524; color: #0F0D0C; font-weight: 800; font-size: 11px; border: 2px solid #0F0D0C;
+  box-shadow: 0 0 0 0 rgba(245,165,36,.7); animation: puls 1.6s infinite;
+}
+@keyframes puls { to { box-shadow: 0 0 0 14px rgba(245,165,36,0); } }
+@media (prefers-reduced-motion: reduce) { .notruf-marker { animation: none; } }
+
+/* Einsätze */
+.tab-zahl { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; margin-left: 4px; }
+.ez-neu { width: 100%; margin-bottom: 12px; min-height: 40px; }
+.sec-title { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 4px 0 8px; }
+.ez-card { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.ez-card.zu { border-left-color: var(--line); opacity: .75; }
+.ez-card .ez-kopf { display: flex; align-items: baseline; gap: 8px; }
+.ez-card .ez-stw { font-weight: 700; flex: 1; }
+.ez-card .ez-meta { font-size: 12px; color: var(--muted); }
+.ez-card p { margin: 4px 0; font-size: 13px; }
+.ez-fz { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.ez-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 2px; border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--line); font-size: 12px; }
+.ez-chip .fms { width: 20px; height: 20px; font-size: 11px; border-radius: 4px; }
+.ez-chip.offen { border-color: #F5A524; }
+.ez-chip small { color: var(--muted); }
+.ez-aktionen { display: flex; gap: 6px; flex-wrap: wrap; }
+.ez-aktionen .btn-ghost { min-height: 30px; font-size: 12px; }
+.ez-alt summary { cursor: pointer; color: var(--muted); min-height: 32px; margin: 8px 0; }
+.ez-marker { display: inline-block; padding: 3px 8px; border-radius: 6px; background: var(--accent); color: #fff;
+  font-weight: 700; font-size: 11px; white-space: nowrap; border: 2px solid #0F0D0C; box-shadow: 0 2px 6px rgba(0,0,0,.5); }
+.ez-fahrzeuge { display: grid; gap: 4px; max-height: 240px; overflow-y: auto; border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px; }
+.ez-fahrzeuge h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 6px 4px 2px; }
+.ez-fahrzeuge label { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 6px; border-radius: 6px;
+  color: var(--text); font-size: 13px; }
+.ez-fahrzeuge label:hover { background: var(--panel-2); }
+.ez-fahrzeuge input { min-height: 0; width: 18px; height: 18px; }
+.ez-fahrzeuge .fms { width: 20px; height: 20px; font-size: 11px; border-radius: 4px; }
+.ez-fahrzeuge small { color: var(--muted); margin-left: auto; }
+textarea { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; resize: vertical; }
+.alarm-text { color: #FF8E8E; font-weight: 700; }
+.item .alarm { font-size: 12px; font-weight: 700; color: #FF8E8E; }
+.notruf { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.notruf:last-child { border-bottom: 0; }
+.notruf .grow { min-width: 0; }
+.notruf .btn-ghost { min-height: 30px; font-size: 12px; white-space: nowrap; }
+
+/* Mein Fahrzeug */
+.mein { grid-area: mein; background: var(--panel); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  padding: 12px; display: grid; gap: 10px; }
+.mein-head { display: flex; align-items: center; gap: 10px; }
+.mein-title { font-weight: 800; font-size: 17px; }
+.mein-fms { width: 40px; height: 40px; font-size: 20px; border-radius: 8px; }
+.mein-alarm { background: rgba(229,72,77,.15); border: 1px solid var(--accent); border-radius: 8px; padding: 10px; font-size: 13px; }
+.mein-alarm b { color: #FF8E8E; }
+.mein-alarm .btn-primary { margin-top: 8px; width: 100%; }
+.mein-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.mein-grid button { min-height: 48px; border-radius: 8px; border: 2px solid var(--line); background: var(--panel-2);
+  color: var(--text); font-weight: 800; font-size: 18px; display: grid; place-items: center; line-height: 1.1; }
+.mein-grid button span { font-size: 9px; font-weight: 600; color: var(--muted); }
+.mein-grid button[aria-pressed="true"] { border-color: var(--c); background: color-mix(in srgb, var(--c) 25%, var(--panel-2)); }
+.mein-grid button:disabled { opacity: .6; }
+
 /* Aktivität */
 .dialog.dialog-wide { width: min(1180px, calc(100vw - 32px)); max-height: calc(100vh - 48px); }
 .akt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
@@ -246,10 +318,11 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 0;
 @media (max-width: 760px) {
   .app {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 55vh auto;
-    grid-template-areas: "top" "map" "side";
+    grid-template-rows: auto auto 55vh auto;
+    grid-template-areas: "top" "mein" "map" "side";
     height: auto;
   }
+  .mein { border-right: 0; }
   .map-wrap { min-height: 55vh; }
   .sidebar { border-right: 0; border-top: 1px solid var(--line); overflow: visible; }
   .topbar { flex-wrap: wrap; padding: 8px 16px; gap: 8px; }
