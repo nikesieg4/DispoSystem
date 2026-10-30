@@ -250,6 +250,25 @@ textarea { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line);
 .hinweis-liste { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
 #hinweis-dialog p { margin: 0; }
 
+/* Leitstelle: Dienst, Status 0 und 5 */
+.ls-box p { margin: 0 0 8px; }
+.ls-box .besetzt { color: #9FD8B5; font-weight: 600; }
+.ls-box .unbesetzt { color: #F5C26B; font-weight: 600; }
+.dialog-alarm { border: 2px solid #E5489C; box-shadow: 0 0 0 6px rgba(229,72,156,.25); }
+.dialog-alarm h2 { color: #FF7AB8; }
+.s0-liste { display: grid; gap: 8px; }
+.s0-eintrag { background: var(--panel-2); border-left: 4px solid #E5489C; border-radius: 8px; padding: 10px 12px; }
+.s0-eintrag b { font-size: 16px; }
+.s0-eintrag p { margin: 2px 0; font-size: 13px; }
+.s0-eintrag .btn-ghost { margin-top: 6px; min-height: 30px; font-size: 12px; }
+.toasts { position: absolute; right: 12px; top: 60px; z-index: 700; display: grid; gap: 8px; width: min(320px, calc(100% - 24px)); }
+.toast { display: flex; gap: 10px; align-items: flex-start; padding: 10px 10px 10px 12px; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line); border-left: 4px solid #B77CF2; box-shadow: 0 6px 18px rgba(0,0,0,.45); font-size: 13px; }
+.toast .grow { min-width: 0; }
+.toast b { color: #D3B2F8; }
+.toast .btn-ghost { min-height: 28px; padding: 0 8px; font-size: 12px; }
+.toast .x { border: 0; background: none; color: var(--muted); font-size: 16px; min-height: 28px; padding: 0 4px; }
+
 /* Mein Fahrzeug */
 .mein { grid-area: mein; background: var(--panel); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
   padding: 12px; display: grid; gap: 10px; }

@@ -88,6 +88,9 @@
   let map, wachen = {}, bereiche = [], fahrzeuge = [];
   let rechte = null; // nur mit API: { name, wachleiter, hoehererDienst, disponent, imDienst, verwaltung }
   let meId = null;
+  // Einsätze anlegen/alarmieren: Rolle Leitstellen Disponent UND im Leitstellendienst
+  const darfDispo = () => Boolean(rechte && rechte.disponieren);
+  let refreshTimer = null;
   let einsaetze = [];
   const mitApi = () => Boolean(cfg.apiUrl);
   const vehicleLayer = L.layerGroup();
@@ -131,7 +134,7 @@
     initUi();
 
     await refresh();
-    setInterval(refresh, cfg.refreshSeconds * 1000);
+    planeRefresh();
   }
 
   function stationIcon(w) {
@@ -185,11 +188,18 @@
     });
   }
 
+  // Disponenten im Dienst bekommen schnellere Updates (Status 0 darf nicht warten)
+  function planeRefresh() {
+    clearInterval(refreshTimer);
+    refreshTimer = setInterval(refresh, darfDispo() ? 5000 : cfg.refreshSeconds * 1000);
+  }
+
   async function refresh() {
     try {
       const data = mitApi() ? await DispoAuth.api("/api/fahrzeuge") : await loadJson("data/fahrzeuge.json");
       fahrzeuge = data.fahrzeuge || [];
       einsaetze = data.einsaetze || [];
+      leitstelle = data.leitstelle || [];
       $("#stand").textContent = "Stand: " + new Date(data.stand || Date.now()).toLocaleString("de-DE");
     } catch (e) {
       $("#stand").textContent = "Fahrzeugdaten konnten nicht geladen werden";
@@ -198,8 +208,10 @@
     renderVehicles();
     renderVehicleList();
     if (mitApi()) {
+      renderLeitstelle();
       renderEinsaetze();
       renderMeinFahrzeug();
+      pruefeMeldungen();
     }
     if (rechte && rechte.verwaltung) renderVerwaltungListe();
   }
@@ -484,7 +496,8 @@
 
   function initEinsaetze() {
     $("#tab-btn-einsaetze").hidden = false;
-    $("#ez-neu").hidden = !(rechte && rechte.disponent);
+    $("#ez-neu").hidden = !darfDispo();
+    initLeitstelle();
     einsatzLayer.addTo(map);
 
     $("#ez-neu").addEventListener("click", () => openEinsatzDialog(null));
@@ -541,7 +554,7 @@
   }
 
   function einsatzKarte(ez) {
-    const darf = rechte && rechte.disponent && ez.offen;
+    const darf = darfDispo() && ez.offen;
     return `<div class="ez-card${ez.offen ? "" : " zu"}">
       <div class="ez-kopf"><span class="ez-stw">#${ez.id} ${esc(ez.stichwort)}</span>
         <span class="ez-meta">${fmtUhr(ez.erstelltAm)}</span></div>
@@ -558,6 +571,7 @@
   }
 
   function renderEinsaetze() {
+    $("#ez-neu").hidden = !darfDispo();
     const offen = einsaetze.filter((e) => e.offen);
     $("#ez-zahl").hidden = !offen.length;
     $("#ez-zahl").textContent = offen.length;
@@ -573,14 +587,14 @@
         ${ez.ort ? `<div class="popup-row">${esc(ez.ort)}</div>` : ""}
         ${ez.bemerkung ? `<div class="popup-row muted">${esc(ez.bemerkung)}</div>` : ""}
         <div class="ez-fz">${alarmChips(ez)}</div>
-        ${rechte && rechte.disponent ? `<button type="button" class="btn-ghost copy" data-ez-edit="${ez.id}">Bearbeiten / Alarmieren</button>` : ""}`)
+        ${darfDispo() ? `<button type="button" class="btn-ghost copy" data-ez-edit="${ez.id}">Bearbeiten / Alarmieren</button>` : ""}`)
         .addTo(einsatzLayer);
     });
     renderNotrufe();
   }
 
   function openEinsatzDialog(ez, vorlage = {}) {
-    if (!ez && !(rechte && rechte.disponent)) return;
+    if (!darfDispo()) return;
     ezBearbeiten = ez;
     ezVorlage = { position: ez ? ez.position || null : null, notrufNr: undefined, ...vorlage };
     $("#ez-title").textContent = ez ? `Einsatz #${ez.id} bearbeiten` : "Neuer Einsatz";
@@ -649,6 +663,132 @@
 
   function fmtUhr(iso) {
     return iso ? new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "";
+  }
+
+  // ---------- Leitstelle: Dienst, Status 0 und 5 ----------
+
+  let leitstelle = [];            // Disponenten im Dienst
+  const quittiert0 = new Set();   // gesehene Status-0-Meldungen (Fahrzeug + Zeitpunkt)
+  const weggeklickt5 = new Set(); // weggeklickte Status-5-Meldungen
+  const titel = document.title;
+
+  function initLeitstelle() {
+    $("#ls-dienst").hidden = !(rechte && rechte.disponent);
+    $("#ls-btn").addEventListener("click", async () => {
+      $("#ls-btn").disabled = true;
+      try {
+        rechte = await DispoAuth.api("/api/leitstelle", { method: "POST", body: { aktiv: !rechte.leitstelleImDienst } });
+        planeRefresh();
+        await refresh();
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        $("#ls-btn").disabled = false;
+      }
+    });
+    $("#s0-dialog").addEventListener("close", () => {
+      fahrzeuge.filter((f) => f.status === 0).forEach((f) => quittiert0.add(meldungsKey(f)));
+      document.title = titel;
+    });
+    const zurKarte = (e) => {
+      const b = e.target.closest("[data-karte]");
+      const f = b && fahrzeuge.find((x) => x.id === b.dataset.karte);
+      if (!f) return;
+      const pos = f.position || (wachen[f.wache] && wachen[f.wache].position);
+      if (pos) map.flyTo(pos, 5);
+    };
+    $("#s0-liste").addEventListener("click", zurKarte);
+    $("#toasts").addEventListener("click", (e) => {
+      zurKarte(e);
+      const x = e.target.closest("[data-weg]");
+      if (x) {
+        weggeklickt5.add(x.dataset.weg);
+        x.closest(".toast").remove();
+      }
+    });
+  }
+
+  function renderLeitstelle() {
+    $("#ls-besetzt").innerHTML = leitstelle.length
+      ? `<span class="besetzt">Besetzt:</span> ${leitstelle.map((d) => esc(d.name)).join(", ")}`
+      : '<span class="unbesetzt">Leitstelle nicht besetzt</span>';
+    if (rechte && rechte.disponent) {
+      const an = rechte.leitstelleImDienst;
+      $("#ls-text").textContent = an
+        ? "Du bist im Leitstellendienst – du kannst Einsätze anlegen und alarmieren und bekommst Meldungen bei Status 0 und 5."
+        : "Melde dich in den Dienst, um Einsätze anzulegen und Meldungen zu bekommen.";
+      $("#ls-btn").textContent = an ? "Leitstellendienst beenden" : "In den Leitstellendienst";
+      $("#ls-btn").className = an ? "btn-ghost" : "btn-primary";
+    }
+  }
+
+  const meldungsKey = (f) => `${f.id}|${f.geaendertAm || ""}`;
+
+  function meldungsDetails(f) {
+    const w = wachen[f.wache];
+    return `<b>${esc(f.rufname)}</b> <span class="muted">· ${esc(f.typ)}${w ? " · " + esc(w.name) : ""}</span>
+      ${f.fzf ? `<p>FzF: ${esc(f.fzf.name)}</p>` : ""}
+      ${f.einsatz ? `<p class="muted">${esc(f.einsatz)}</p>` : ""}
+      <p class="muted small">seit ${fmtUhr(f.geaendertAm)}${f.geaendertVon ? " · gemeldet von " + esc(f.geaendertVon) : ""}</p>`;
+  }
+
+  // Nur für Disponenten im Dienst: Status 0 als Popup, Status 5 als Meldung am Rand
+  function pruefeMeldungen() {
+    if (!darfDispo()) {
+      $("#toasts").innerHTML = "";
+      if ($("#s0-dialog").open) $("#s0-dialog").close();
+      return;
+    }
+
+    const status0 = fahrzeuge.filter((f) => f.status === 0);
+    const neu0 = status0.filter((f) => !quittiert0.has(meldungsKey(f)));
+    if (neu0.length) {
+      $("#s0-liste").innerHTML = status0.map((f) => `<div class="s0-eintrag">${meldungsDetails(f)}
+        <button type="button" class="btn-ghost" data-karte="${esc(f.id)}">Auf Karte zeigen</button></div>`).join("");
+      if (!$("#s0-dialog").open) {
+        $("#s0-dialog").showModal();
+        warnton();
+      }
+      document.title = "⚠ STATUS 0 – " + titel;
+    } else if ($("#s0-dialog").open && !status0.length) {
+      $("#s0-dialog").close();
+    }
+
+    const status5 = fahrzeuge.filter((f) => f.status === 5 && !weggeklickt5.has(meldungsKey(f)));
+    const sollKeys = new Set(status5.map(meldungsKey));
+    document.querySelectorAll("#toasts .toast").forEach((t) => !sollKeys.has(t.dataset.key) && t.remove());
+    for (const f of status5) {
+      const key = meldungsKey(f);
+      if (document.querySelector(`#toasts .toast[data-key="${CSS.escape(key)}"]`)) continue;
+      const t = document.createElement("div");
+      t.className = "toast";
+      t.dataset.key = key;
+      t.setAttribute("role", "status");
+      t.innerHTML = `<div class="grow"><div><b>Sprechwunsch (Status 5)</b></div>${meldungsDetails(f)}
+          <button type="button" class="btn-ghost" data-karte="${esc(f.id)}">Auf Karte</button></div>
+        <button type="button" class="x" data-weg="${esc(key)}" aria-label="Meldung schließen">✕</button>`;
+      $("#toasts").appendChild(t);
+    }
+  }
+
+  // Dreifacher Warnton (Browser erlauben Ton erst nach einem Klick auf der Seite)
+  function warnton() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.35, 0.7].forEach((t) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.frequency.value = 880;
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+        g.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.25);
+        o.connect(g).connect(ctx.destination);
+        o.start(ctx.currentTime + t);
+        o.stop(ctx.currentTime + t + 0.3);
+      });
+    } catch {
+      /* kein Ton möglich */
+    }
   }
 
   // ---------- ER:LC live: Feuerwehr-Spieler & Notrufe ----------
@@ -801,7 +941,7 @@
     if (!live || !live.aktiv) return;
     const notrufe = live.notrufe || [];
     const uebernommen = (nr) => einsaetze.find((e) => e.offen && e.notrufNr === nr);
-    const darf = rechte && rechte.disponent;
+    const darf = darfDispo();
 
     $("#notruf-box").hidden = !notrufe.length;
     $("#notruf-liste").innerHTML = notrufe.map((c) => {
@@ -1080,7 +1220,7 @@
 
   async function ladeAktivitaet() {
     $("#akt-error").hidden = true;
-    $("#akt-body").innerHTML = '<tr><td colspan="10" class="leer">Lädt …</td></tr>';
+    $("#akt-body").innerHTML = '<tr><td colspan="11" class="leer">Lädt …</td></tr>';
     try {
       aktDaten = await DispoAuth.api("/api/aktivitaet?tage=" + $("#akt-zeitraum").value);
       renderAktivitaet();
@@ -1112,11 +1252,12 @@
           <td>${p.aktuellAuf ? esc(p.aktuellAuf) : leer}</td>
           <td>${p.zuletztZugeteiltVon ? esc(p.zuletztZugeteiltVon) : leer}</td>
           <td class="num">${p.dienstMs ? fmtDauer(p.dienstMs) : leer}</td>
+          <td class="num">${p.leitstelleMs ? fmtDauer(p.leitstelleMs) : leer}</td>
           <td class="num">${p.statusMeldungen || leer}</td>
           <td class="num">${p.verwaltung || leer}</td>
           <td>${p.zuletztAktiv ? fmtZeit(p.zuletztAktiv) : leer}</td>
         </tr>`).join("")
-      : '<tr><td colspan="10" class="leer">In diesem Zeitraum gibt es noch keine Aktivität.</td></tr>';
+      : '<tr><td colspan="11" class="leer">In diesem Zeitraum gibt es noch keine Aktivität.</td></tr>';
 
     $("#akt-log").innerHTML = aktDaten.protokoll.length
       ? aktDaten.protokoll.map((e) =>
@@ -1139,10 +1280,10 @@
 
   function csvRangliste() {
     const kopf = ["Name", "Discord-ID", "Zeit auf Fahrzeugen (Std.)", "davon FzF (Std.)", "Zuteilungen", "Aktuell auf",
-      "Zuletzt zugeteilt von", "Dienst als Wachleiter (Std.)", "Statusmeldungen", "Verwaltungsaktionen", "Zuletzt aktiv"];
+      "Zuletzt zugeteilt von", "Dienst als Wachleiter (Std.)", "Dienst Leitstelle (Std.)", "Statusmeldungen", "Verwaltungsaktionen", "Zuletzt aktiv"];
     const zeilen = aktDaten.personen.map((p) => [
       p.name, p.userId || "", stunden(p.fahrzeugMs), stunden(p.fzfMs), p.zuteilungen, p.aktuellAuf || "",
-      p.zuletztZugeteiltVon || "", stunden(p.dienstMs), p.statusMeldungen, p.verwaltung,
+      p.zuletztZugeteiltVon || "", stunden(p.dienstMs), stunden(p.leitstelleMs || 0), p.statusMeldungen, p.verwaltung,
       p.zuletztAktiv ? new Date(p.zuletztAktiv).toLocaleString("de-DE") : "",
     ]);
     csvHerunterladen("aktivitaet", [kopf, ...zeilen]);

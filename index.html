@@ -77,6 +77,15 @@
       </div>
 
       <div id="tab-einsaetze" class="tab-panel" hidden>
+        <section class="card ls-box">
+          <h2 class="card-title">Leitstelle</h2>
+          <p id="ls-besetzt" class="small"></p>
+          <div id="ls-dienst" hidden>
+            <p id="ls-text" class="muted small"></p>
+            <button id="ls-btn" type="button" class="btn-ghost"></button>
+          </div>
+        </section>
+
         <button id="ez-neu" type="button" class="btn-primary ez-neu" hidden>Neuer Einsatz</button>
 
         <section id="notruf-box" class="card" hidden>
@@ -146,6 +155,7 @@
     <main class="map-wrap">
       <div id="map"></div>
       <button id="coord-btn" class="map-btn" type="button" aria-pressed="false">Koordinaten</button>
+      <div id="toasts" class="toasts" aria-live="polite"></div>
       <div id="pick-banner" class="pick-banner" hidden>
         Klicke auf die Karte, um die Position zu setzen.
         <button id="pick-cancel" type="button" class="btn-ghost">Abbrechen</button>
@@ -202,6 +212,17 @@
     </form>
     <datalist id="cd-fzf-optionen"></datalist>
     <datalist id="cd-optionen"></datalist>
+  </dialog>
+
+  <!-- Status 0: Dringender Sprechwunsch (nur Disponenten im Dienst) -->
+  <dialog id="s0-dialog" class="dialog dialog-alarm" aria-labelledby="s0-title">
+    <form method="dialog" class="form">
+      <h2 id="s0-title">⚠ Dringender Sprechwunsch (Status 0)</h2>
+      <div id="s0-liste" class="s0-liste"></div>
+      <div class="row end">
+        <button type="submit" class="btn-primary">Quittieren</button>
+      </div>
+    </form>
   </dialog>
 
   <!-- Hinweis zu ER:LC-Positionen, bei jedem Öffnen -->
@@ -295,6 +316,7 @@
             <th><button type="button" data-sort="aktuellAuf">Aktuell auf</button></th>
             <th><button type="button" data-sort="zuletztZugeteiltVon">Zuletzt zugeteilt von</button></th>
             <th class="num"><button type="button" data-sort="dienstMs">Dienst als WL</button></th>
+            <th class="num"><button type="button" data-sort="leitstelleMs">Dienst Leitstelle</button></th>
             <th class="num"><button type="button" data-sort="statusMeldungen">Status&shy;meldungen</button></th>
             <th class="num"><button type="button" data-sort="verwaltung">Verwaltung</button></th>
             <th><button type="button" data-sort="zuletztAktiv">Zuletzt aktiv</button></th>

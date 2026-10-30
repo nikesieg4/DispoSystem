@@ -35,6 +35,11 @@ mit Stichwort, Ort, Position und Bemerkung an und alarmiert Fahrzeuge. Die
 Fahrzeuge setzen ihren Status selbst – mit Status 3 oder 4 gilt die
 Alarmierung als quittiert, bis dahin steht beim Fahrzeug *wartet*. Der
 Disponent kann nachalarmieren, Alarme zurücknehmen und Einsätze abschließen.
+Dafür meldet er sich im Tab *Einsätze* in den **Leitstellendienst** (endet wie
+der Wachleiter-Dienst spätestens nach 12 Stunden). Alle sehen dort, ob die
+Leitstelle besetzt ist. Disponenten im Dienst bekommen bei **Status 0** ein
+Popup mit Warnton, bei **Status 5** eine Meldung am Rand; die Seite
+aktualisiert sich für sie alle 5 Sekunden.
 
 **Mein Fahrzeug**: Wer als FzF oder Besatzung eingeteilt ist, sieht oben sein
 Fahrzeug mit großen Status-Buttons 0–9 und dem aktuellen Alarm („Einsatzdaten

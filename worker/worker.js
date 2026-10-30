@@ -6,7 +6,7 @@
 //   • Wachleiter im Dienst → zusätzlich Fahrzeuge verwalten
 //   • Höherer Dienst       → Fahrzeuge verwalten (immer)
 //   • Wachleiter & Höherer Dienst sehen die Aktivitäts-Auswertung
-//   • Leitstellen-Disponent → Einsätze anlegen, Fahrzeuge alarmieren
+//   • Leitstellen-Disponent im Dienst → Einsätze anlegen, Fahrzeuge alarmieren
 //
 // Einstellungen (Cloudflare → Worker → Settings → Variables):
 //   BOT_TOKEN        (Secret!) Token des Discord-Bots
@@ -41,6 +41,8 @@ const SCHEMA = [
      geaendert_von TEXT, geaendert_am TEXT)`,
   `CREATE TABLE IF NOT EXISTS dienst (
      user_id TEXT PRIMARY KEY, name TEXT NOT NULL, seit TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS leitstelle (
+     user_id TEXT PRIMARY KEY, name TEXT NOT NULL, seit TEXT NOT NULL)`,
   // Aktivität: wer war wann auf welchem Fahrzeug, wer war im Dienst, wer hat was getan
   `CREATE TABLE IF NOT EXISTS zuteilungen (
      id INTEGER PRIMARY KEY AUTOINCREMENT, person TEXT NOT NULL, user_id TEXT, name TEXT NOT NULL,
@@ -67,7 +69,12 @@ const SCHEMA = [
      postal TEXT PRIMARY KEY, sum_x REAL NOT NULL, sum_z REAL NOT NULL, n REAL NOT NULL)`,
 ];
 // Spalten, die später dazugekommen sind (für bestehende Datenbanken)
-const NEUE_SPALTEN = { fzf: "TEXT", besatzung: "TEXT" };
+const NEUE_SPALTEN = {
+  fahrzeuge: { fzf: "TEXT", besatzung: "TEXT" },
+  dienstzeiten: { art: "TEXT NOT NULL DEFAULT 'wachleiter'" },
+};
+// Dienstarten → Tabelle der aktuell Diensthabenden
+const DIENST_TABELLE = { wachleiter: "dienst", leitstelle: "leitstelle" };
 
 // Kurzzeit-Caches pro Worker-Instanz, damit nicht jede Anfrage Discord fragt.
 const tokenCache = new Map(); // token -> { user, bis }
@@ -87,10 +94,12 @@ export default {
     try {
       if (!schemaBereit) {
         await env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)));
-        const { results } = await env.DB.prepare("PRAGMA table_info(fahrzeuge)").all();
-        for (const [spalte, typ] of Object.entries(NEUE_SPALTEN)) {
-          if (!results.some((c) => c.name === spalte)) {
-            await env.DB.prepare(`ALTER TABLE fahrzeuge ADD COLUMN ${spalte} ${typ}`).run();
+        for (const [tabelle, spalten] of Object.entries(NEUE_SPALTEN)) {
+          const { results } = await env.DB.prepare(`PRAGMA table_info(${tabelle})`).all();
+          for (const [spalte, typ] of Object.entries(spalten)) {
+            if (!results.some((c) => c.name === spalte)) {
+              await env.DB.prepare(`ALTER TABLE ${tabelle} ADD COLUMN ${spalte} ${typ}`).run();
+            }
           }
         }
         schemaBereit = true;
@@ -117,7 +126,12 @@ async function route(request, env, ctx) {
 
   if (pfad === "/api/fahrzeuge" && methode === "GET") {
     const { results } = await env.DB.prepare("SELECT * FROM fahrzeuge ORDER BY wache, rufname").all();
-    return json({ stand: new Date().toISOString(), fahrzeuge: results.map(ausDb), einsaetze: await einsatzListe(env) });
+    return json({
+      stand: new Date().toISOString(),
+      fahrzeuge: results.map(ausDb),
+      einsaetze: await einsatzListe(env),
+      leitstelle: await dienstListe(env, "leitstelle"),
+    });
   }
 
   if (pfad === "/api/live" && methode === "GET") {
@@ -291,25 +305,35 @@ async function route(request, env, ctx) {
     return json({ ok: true });
   }
 
-  if (pfad === "/api/dienst" && methode === "GET") {
-    return json({ imDienst: await dienstListe(env) });
+  // /api/dienst = Wachleiter, /api/leitstelle = Disponenten
+  const dienstArt = { "/api/dienst": "wachleiter", "/api/leitstelle": "leitstelle" }[pfad];
+  if (dienstArt && methode === "GET") {
+    return json({ imDienst: await dienstListe(env, dienstArt) });
   }
 
-  if (pfad === "/api/dienst" && methode === "POST") {
-    if (!ich.wachleiter) throw fehler(403, "Nur Wachleiter können sich in den Dienst melden.");
+  if (dienstArt && methode === "POST") {
+    const leitstelle = dienstArt === "leitstelle";
+    if (leitstelle ? !ich.disponent : !ich.wachleiter) {
+      throw fehler(403, leitstelle
+        ? "Nur Leitstellen-Disponenten können sich in der Leitstelle in den Dienst melden."
+        : "Nur Wachleiter können sich in den Dienst melden.");
+    }
+    const imDienst = leitstelle ? ich.leitstelleImDienst : ich.imDienst;
+    const tabelle = DIENST_TABELLE[dienstArt];
+    const was = leitstelle ? "Leitstellendienst" : "Dienst";
     const { aktiv } = await request.json();
-    if (aktiv && !ich.imDienst) {
+    if (aktiv && !imDienst) {
       await env.DB.batch([
-        env.DB.prepare("INSERT OR REPLACE INTO dienst (user_id, name, seit) VALUES (?, ?, ?)").bind(ich.id, ich.name, jetzt()),
-        env.DB.prepare("INSERT INTO dienstzeiten (user_id, name, von) VALUES (?, ?, ?)").bind(ich.id, ich.name, jetzt()),
-        protokoll(env, ich, "dienst", "Dienst angetreten"),
+        env.DB.prepare(`INSERT OR REPLACE INTO ${tabelle} (user_id, name, seit) VALUES (?, ?, ?)`).bind(ich.id, ich.name, jetzt()),
+        env.DB.prepare("INSERT INTO dienstzeiten (user_id, name, von, art) VALUES (?, ?, ?, ?)").bind(ich.id, ich.name, jetzt(), dienstArt),
+        protokoll(env, ich, "dienst", `${was} angetreten`),
       ]);
-    } else if (!aktiv && ich.imDienst) {
+    } else if (!aktiv && imDienst) {
       await env.DB.batch([
-        env.DB.prepare("DELETE FROM dienst WHERE user_id = ?").bind(ich.id),
-        env.DB.prepare("UPDATE dienstzeiten SET bis = ?, beendet = 'selbst' WHERE user_id = ? AND bis IS NULL")
-          .bind(jetzt(), ich.id),
-        protokoll(env, ich, "dienst", "Dienst beendet"),
+        env.DB.prepare(`DELETE FROM ${tabelle} WHERE user_id = ?`).bind(ich.id),
+        env.DB.prepare("UPDATE dienstzeiten SET bis = ?, beendet = 'selbst' WHERE user_id = ? AND art = ? AND bis IS NULL")
+          .bind(jetzt(), ich.id, dienstArt),
+        protokoll(env, ich, "dienst", `${was} beendet`),
       ]);
     }
     return json(await rechte(ich, env));
@@ -379,8 +403,13 @@ async function anmelden(request, env) {
 }
 
 async function rechte(ich, env) {
-  const imDienst = ich.wachleiter && (await dienstListe(env)).some((d) => d.userId === ich.id);
-  return { ...ich, imDienst, verwaltung: ich.hoehererDienst || imDienst };
+  const imDienst = ich.wachleiter && (await dienstListe(env, "wachleiter")).some((d) => d.userId === ich.id);
+  const leitstelleImDienst = ich.disponent && (await dienstListe(env, "leitstelle")).some((d) => d.userId === ich.id);
+  return {
+    ...ich, imDienst, leitstelleImDienst,
+    verwaltung: ich.hoehererDienst || imDienst,
+    disponieren: ich.disponent && leitstelleImDienst,
+  };
 }
 
 function darfVerwalten(ich) {
@@ -393,6 +422,7 @@ function darfVerwalten(ich) {
 
 function darfDisponieren(ich) {
   if (!ich.disponent) throw fehler(403, "Einsätze anlegen und alarmieren kann nur die Leitstelle (Leitstellen Disponent).");
+  if (!ich.leitstelleImDienst) throw fehler(403, "Melde dich zuerst in der Leitstelle in den Dienst.");
 }
 
 async function serverRollen(env) {
@@ -451,18 +481,19 @@ async function mitglieder(env) {
   return liste;
 }
 
-async function dienstListe(env) {
+async function dienstListe(env, art) {
+  const tabelle = DIENST_TABELLE[art];
   const grenze = new Date(Date.now() - DIENST_MAX_STUNDEN * 3600 * 1000).toISOString();
-  const { results: abgelaufen } = await env.DB.prepare("SELECT * FROM dienst WHERE seit < ?").bind(grenze).all();
+  const { results: abgelaufen } = await env.DB.prepare(`SELECT * FROM ${tabelle} WHERE seit < ?`).bind(grenze).all();
   if (abgelaufen.length) {
     // Dienstzeit endet nach DIENST_MAX_STUNDEN, nicht erst beim nächsten Aufruf
     await env.DB.batch(abgelaufen.flatMap((d) => [
-      env.DB.prepare("UPDATE dienstzeiten SET bis = ?, beendet = 'automatisch' WHERE user_id = ? AND bis IS NULL")
-        .bind(new Date(Date.parse(d.seit) + DIENST_MAX_STUNDEN * 3600 * 1000).toISOString(), d.user_id),
-      env.DB.prepare("DELETE FROM dienst WHERE user_id = ?").bind(d.user_id),
+      env.DB.prepare("UPDATE dienstzeiten SET bis = ?, beendet = 'automatisch' WHERE user_id = ? AND art = ? AND bis IS NULL")
+        .bind(new Date(Date.parse(d.seit) + DIENST_MAX_STUNDEN * 3600 * 1000).toISOString(), d.user_id, art),
+      env.DB.prepare(`DELETE FROM ${tabelle} WHERE user_id = ?`).bind(d.user_id),
     ]));
   }
-  const { results } = await env.DB.prepare("SELECT * FROM dienst ORDER BY seit").all();
+  const { results } = await env.DB.prepare(`SELECT * FROM ${tabelle} ORDER BY seit`).all();
   return results.map((d) => ({ userId: d.user_id, name: d.name, seit: d.seit }));
 }
 
@@ -723,7 +754,7 @@ async function aktivitaet(env, tage) {
       personen.set(key, {
         key, userId: key.startsWith("name:") ? null : key, name,
         fahrzeugMs: 0, fzfMs: 0, zuteilungen: 0, aktuellAuf: null, zuletztZugeteiltVon: null,
-        dienstMs: 0, statusMeldungen: 0, verwaltung: 0, zuletztAktiv: null,
+        dienstMs: 0, leitstelleMs: 0, statusMeldungen: 0, verwaltung: 0, zuletztAktiv: null,
       });
     }
     return personen.get(key);
@@ -744,7 +775,8 @@ async function aktivitaet(env, tage) {
   }
   for (const d of dienste.results) {
     const p = hole(d.user_id, d.name);
-    p.dienstMs += dauer(d.von, d.bis);
+    if (d.art === "leitstelle") p.leitstelleMs += dauer(d.von, d.bis);
+    else p.dienstMs += dauer(d.von, d.bis);
     aktiv(p, d.bis || new Date(nun).toISOString());
   }
   for (const c of zaehler.results) {
@@ -757,7 +789,8 @@ async function aktivitaet(env, tage) {
   return {
     von: tage ? startIso : null,
     bis: new Date(nun).toISOString(),
-    personen: [...personen.values()].sort((a, b) => b.fahrzeugMs - a.fahrzeugMs || b.dienstMs - a.dienstMs),
+    personen: [...personen.values()].sort((a, b) =>
+      b.fahrzeugMs - a.fahrzeugMs || b.leitstelleMs - a.leitstelleMs || b.dienstMs - a.dienstMs),
     zuteilungen: zut.results.map((z) => ({
       name: z.name, userId: z.user_id, rufname: z.rufname, rolle: z.rolle, von: z.von, bis: z.bis,
       zugeteiltVon: z.zugeteilt_von, ausgetragenVon: z.ausgetragen_von,
