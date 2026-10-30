@@ -200,7 +200,7 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 0;
   box-shadow: 0 0 0 2px rgba(0,0,0,.45);
 }
 .notruf-marker {
-  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center; min-width: 34px; height: 34px; padding: 0 4px; border-radius: 17px;
   background: #F5A524; color: #0F0D0C; font-weight: 800; font-size: 11px; border: 2px solid #0F0D0C;
   box-shadow: 0 0 0 0 rgba(245,165,36,.7); animation: puls 1.6s infinite;
 }

@@ -584,6 +584,7 @@ async function live(env, ctx) {
       const [x, z] = spielPosition(c.Position);
       return {
         nr: c.CallNumber, beschreibung: c.Description || "", ort: c.PositionDescriptor || "",
+        roh: c.Position, // Rohformat zur Kontrolle der Umrechnung
         x, z, seit: c.StartedAt, anrufer: c.Players?.length || 0,
       };
     }),

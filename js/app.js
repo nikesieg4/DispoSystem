@@ -779,7 +779,9 @@
         .bindTooltip(`${esc(p.name)}${p.callsign ? " · " + esc(p.callsign) : ""}`, { direction: "top", offset: [0, -6] })
         .bindPopup(`<div class="popup-title">${esc(p.name)}</div>
           ${p.callsign ? `<div class="popup-row">Callsign: ${esc(p.callsign)}</div>` : ""}
-          ${ort.trim() ? `<div class="popup-row muted">${esc(ort.trim())}</div>` : ""}`)
+          ${ort.trim() ? `<div class="popup-row muted">${esc(ort.trim())}</div>` : ""}
+          ${rechte && (rechte.disponent || rechte.wachleiter || rechte.hoehererDienst)
+            ? `<div class="popup-row muted small">API: X ${Math.round(p.x)}, Z ${Math.round(p.z)}</div>` : ""}`)
         .addTo(spielerLayer);
     });
     renderNotrufe();
@@ -812,12 +814,14 @@
       const pos = spielZuKarte(c.x, c.z);
       if (!pos || uebernommen(c.nr)) return;
       L.marker(pos, {
-        icon: L.divIcon({ className: "", html: '<div class="notruf-marker">112</div>', iconSize: [34, 34], iconAnchor: [17, 17] }),
+        icon: L.divIcon({ className: "", html: `<div class="notruf-marker">${esc(c.nr)}</div>`, iconSize: [34, 34], iconAnchor: [17, 17] }),
         zIndexOffset: 600,
       }).bindPopup(`<div class="popup-title">Notruf ${esc(c.nr)}</div>
         <div class="popup-row">${esc(c.beschreibung || "ohne Beschreibung")}</div>
         ${c.ort ? `<div class="popup-row muted">${esc(c.ort)}</div>` : ""}
         <div class="popup-row muted">${fmtSeit(c.seit)}</div>
+        ${rechte && (rechte.disponent || rechte.wachleiter || rechte.hoehererDienst)
+          ? `<div class="popup-row muted small">API: Position ${esc(JSON.stringify(c.roh ?? [c.x, c.z]))}${umrechnung && umrechnung.punkte ? ` · kalibriert über ${umrechnung.punkte} Orte, s=${umrechnung.s.toFixed(3)}` : ""}</div>` : ""}
         ${darf ? `<button type="button" class="btn-ghost copy" data-notruf="${esc(c.nr)}">Einsatz anlegen</button>` : ""}`)
         .addTo(notrufLayer);
     });
